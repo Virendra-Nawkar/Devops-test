@@ -86,7 +86,7 @@ function ScoreCircle({ score, label, size = 'lg' }) {
         {/* Score number and grade label centred inside the ring */}
         <div
           className="absolute inset-0 flex flex-col items-center justify-center"
-          style={{ transform: 'none' }}  {/* counteracts parent rotation */}
+          style={{ transform: 'none' }}
         >
           <span
             className={`font-bold leading-none ${size === 'lg' ? 'text-2xl' : 'text-xl'}`}
