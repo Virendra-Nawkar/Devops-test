@@ -1,0 +1,30 @@
+# BAD Kubernetes Deployment — intentionally has many issues for testing
+# Upload this to the Kubernetes scanner to see findings
+# Expected findings: runAsNonRoot, cpuLimitsMissing, memoryLimitsMissing,
+#   livenessProbeMissing, readinessProbeMissing, tagNotSpecified, privilegeEscalationAllowed
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bad-app
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bad-app
+  template:
+    metadata:
+      labels:
+        app: bad-app
+    spec:
+      # No securityContext at pod level — runs as root by default
+      containers:
+      - name: app
+        image: myapp:latest       # using :latest tag is a problem
+        # No imagePullPolicy set
+        ports:
+        - containerPort: 3000
+        # No resources (CPU/memory requests or limits)
+        # No livenessProbe
+        # No readinessProbe
+        # No securityContext at container level

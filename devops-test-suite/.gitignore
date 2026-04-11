@@ -1,0 +1,38 @@
+# ── Node.js ──────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── Build output ─────────────────────────────────────────────
+frontend/dist/
+frontend/.vite/
+
+# ── Runtime data ─────────────────────────────────────────────
+# Backend stores uploaded files and scan history here at runtime
+backend/uploads/
+backend/scan-history.json
+
+# ── Environment / secrets ────────────────────────────────────
+# Keep the root .env out of git so your VM IP is not public
+.env.local
+.env.production
+
+# ── OS files ─────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Editors ──────────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# ── Logs ─────────────────────────────────────────────────────
+logs/
+*.log
+
+# ── Temp / test artifacts ────────────────────────────────────
+tmp/
+temp/

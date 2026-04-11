@@ -1,0 +1,65 @@
+# GOOD Kubernetes Deployment — follows all best practices
+# Upload this to the Kubernetes scanner to see a high score
+# Expected: few or no findings, score close to 100
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: good-app
+  namespace: default
+  labels:
+    app: good-app
+    version: "1.2.3"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: good-app
+  template:
+    metadata:
+      labels:
+        app: good-app
+        version: "1.2.3"
+    spec:
+      # Pod-level security context: run as non-root user
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 2000
+      containers:
+      - name: app
+        image: myapp:1.2.3          # pinned version tag
+        imagePullPolicy: Always     # always pull fresh image
+        ports:
+        - containerPort: 3000
+          protocol: TCP
+        # Resource requests and limits prevent noisy-neighbour problems
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "250m"
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+        # Liveness probe: restart if the app is stuck
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          failureThreshold: 3
+        # Readiness probe: stop sending traffic if the app isn't ready
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        # Container-level security context
+        securityContext:
+          readOnlyRootFilesystem: true    # immutable filesystem
+          allowPrivilegeEscalation: false # prevent setuid escalation
+          capabilities:
+            drop:
+            - ALL                         # drop all Linux capabilities
