@@ -72,17 +72,18 @@ async function runTfsec(dirPath) {
   const results = parsed.results || []
 
   // Convert tfsec finding format to our standard format
+  // tfsec always provides impact (why it matters) and resolution (how to fix it)
+  // — pass these through so explanations.js can use them as fallback
   const rawFindings = results.map(item => ({
-    // tfsec uses rule_id like "AVD-AZU-0002"
-    code:     item.rule_id || item.long_id || 'UNKNOWN',
-    severity: SEVERITY_MAP[(item.severity || 'LOW').toUpperCase()] || 'LOW',
-    message:  item.description || item.rule_description || '',
-    // tfsec provides location info
-    line:     item.location?.start_line || null,
-    tool:     'tfsec',
-    // Extra fields tfsec provides
-    impact:      item.impact      || '',
-    resolution:  item.resolution  || '',
+    code:       item.rule_id || item.long_id || 'UNKNOWN',
+    severity:   SEVERITY_MAP[(item.severity || 'LOW').toUpperCase()] || 'LOW',
+    message:    item.description || item.rule_description || '',
+    line:       item.location?.start_line || null,
+    tool:       'tfsec',
+    // These three fields are used by explanations.js when the code is not in our DB
+    impact:     item.impact      || '',
+    resolution: item.resolution  || '',
+    guideline:  (item.links || [])[0] || '',
   }))
 
   return enrichAll(rawFindings)

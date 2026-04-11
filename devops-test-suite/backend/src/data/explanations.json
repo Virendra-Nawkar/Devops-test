@@ -1,4 +1,188 @@
 {
+  "DL3000": {
+    "title": "Use absolute path for WORKDIR",
+    "severity": "MEDIUM",
+    "tool": "hadolint",
+    "why": "A relative WORKDIR is ambiguous and depends on where the previous WORKDIR left off. Future maintainers (and tools) may misread the directory the container is actually running in.",
+    "fix": "Always use an absolute path:\n  # Bad:  WORKDIR app\n  # Good: WORKDIR /app",
+    "learnMore": "Study: Docker WORKDIR instruction, Linux absolute vs relative paths"
+  },
+  "DL3003": {
+    "title": "Use absolute path for WORKDIR",
+    "severity": "MEDIUM",
+    "tool": "hadolint",
+    "why": "A relative WORKDIR (e.g. WORKDIR app) is resolved against whatever directory was set before it. This is error-prone and hard to reason about.",
+    "fix": "Use an absolute path starting with /:\n  WORKDIR /app",
+    "learnMore": "Study: Docker WORKDIR, Dockerfile best practices"
+  },
+  "DL3004": {
+    "title": "Do not use sudo inside a Dockerfile",
+    "severity": "HIGH",
+    "tool": "hadolint",
+    "why": "sudo may not be installed in the base image, and using it is a sign that the container is running as a non-privileged user trying to gain root. Better to run the RUN commands as root during build and switch to a non-root USER at the end.",
+    "fix": "Remove sudo — RUN commands execute as root by default during build:\n  # Bad:  RUN sudo apt-get install -y curl\n  # Good: RUN apt-get install -y curl",
+    "learnMore": "Study: Docker build context, RUN as root vs runtime USER"
+  },
+  "DL3011": {
+    "title": "Invalid port number — must be between 0 and 65535",
+    "severity": "HIGH",
+    "tool": "hadolint",
+    "why": "TCP/UDP port numbers are 16-bit unsigned integers (0–65535). Exposing a port outside this range is invalid and will cause runtime errors.",
+    "fix": "Change the EXPOSE instruction to a valid port number:\n  EXPOSE 3000",
+    "learnMore": "Study: TCP/UDP port numbers, IANA port registry"
+  },
+  "DL3012": {
+    "title": "Multiple consecutive RUN instructions — combine them",
+    "severity": "LOW",
+    "tool": "hadolint",
+    "why": "Each RUN instruction creates a new image layer. Multiple consecutive RUN instructions bloat the image size because intermediate layers cannot be removed.",
+    "fix": "Combine RUN instructions using && and backslash continuation:\n  # Bad:\n  RUN apt-get update\n  RUN apt-get install -y curl\n  RUN rm -rf /var/lib/apt/lists/*\n\n  # Good:\n  RUN apt-get update \\\n   && apt-get install -y curl \\\n   && rm -rf /var/lib/apt/lists/*",
+    "learnMore": "Study: Docker image layers, layer caching, image optimisation"
+  },
+  "DL3013": {
+    "title": "Pin versions in pip install",
+    "severity": "MEDIUM",
+    "tool": "hadolint",
+    "why": "Without pinned versions, pip will install the latest version on every build. A new release of a dependency can break your app silently.",
+    "fix": "Pin every package to an exact version:\n  # Bad:  RUN pip3 install flask requests\n  # Good: RUN pip3 install flask==3.0.0 requests==2.31.0",
+    "learnMore": "Study: Python dependency pinning, pip freeze, requirements.txt, virtual environments"
+  },
+  "DL3016": {
+    "title": "Pin versions in npm install",
+    "severity": "MEDIUM",
+    "tool": "hadolint",
+    "why": "npm install without a lock file or pinned versions pulls the latest compatible release. This makes builds non-reproducible.",
+    "fix": "Use npm ci (which respects package-lock.json) instead of npm install:\n  # Bad:  RUN npm install\n  # Good: RUN npm ci --only=production",
+    "learnMore": "Study: npm ci vs npm install, package-lock.json, reproducible builds"
+  },
+  "DL3017": {
+    "title": "Do not use apk upgrade",
+    "severity": "MEDIUM",
+    "tool": "hadolint",
+    "why": "apk upgrade upgrades all packages to the latest version, making the build non-reproducible. Two builds on different days will install different package versions.",
+    "fix": "Remove apk upgrade. Pin specific versions with apk add instead:\n  # Bad:  RUN apk upgrade && apk add curl\n  # Good: RUN apk add --no-cache curl=8.x.x",
+    "learnMore": "Study: Alpine Linux apk, reproducible builds, immutable infrastructure"
+  },
+  "DL3018": {
+    "title": "Pin versions in apk add",
+    "severity": "MEDIUM",
+    "tool": "hadolint",
+    "why": "Without a pinned version, apk add pulls the latest package on every build. The package version can change silently, introducing bugs or vulnerabilities.",
+    "fix": "Pin the version with =:\n  # Bad:  RUN apk add --no-cache curl\n  # Good: RUN apk add --no-cache curl=8.9.1-r0",
+    "learnMore": "Study: Alpine Linux package pinning, apk version syntax"
+  },
+  "DL3019": {
+    "title": "Use --no-cache with apk add",
+    "severity": "LOW",
+    "tool": "hadolint",
+    "why": "Without --no-cache, apk stores the package index on disk. This adds unnecessary bytes to the image layer.",
+    "fix": "Add --no-cache flag (replaces the need for apk update + cache cleanup):\n  # Bad:  RUN apk update && apk add curl && rm -rf /var/cache/apk/*\n  # Good: RUN apk add --no-cache curl",
+    "learnMore": "Study: Alpine Linux image optimisation, Docker layer size"
+  },
+  "DL3021": {
+    "title": "COPY with multiple sources requires destination to end with /",
+    "severity": "HIGH",
+    "tool": "hadolint",
+    "why": "When copying multiple files into a directory, the destination must be a directory path (ending with /). Without the slash, Docker interprets the last argument as a filename and the copy fails.",
+    "fix": "End the destination path with a slash:\n  # Bad:  COPY file1.txt file2.txt /app\n  # Good: COPY file1.txt file2.txt /app/",
+    "learnMore": "Study: Docker COPY syntax, source/destination paths"
+  },
+  "DL3022": {
+    "title": "COPY --from should reference a previously defined FROM alias",
+    "severity": "MEDIUM",
+    "tool": "hadolint",
+    "why": "COPY --from references a build stage by name. If the alias doesn't match a FROM ... AS alias line, the build will fail.",
+    "fix": "Name your build stages and reference them exactly:\n  FROM node:20-alpine AS builder\n  ...\n  FROM node:20-alpine\n  COPY --from=builder /app/dist /app/dist",
+    "learnMore": "Study: Docker multi-stage builds, FROM AS alias"
+  },
+  "DL3026": {
+    "title": "Use only an allowed base image registry",
+    "severity": "MEDIUM",
+    "tool": "hadolint",
+    "why": "Pulling from unofficial or unknown registries can introduce malicious images. Your organisation may have a policy that allows only specific trusted registries.",
+    "fix": "Use images from your approved registry list:\n  # Example: only use docker.io or your internal registry\n  FROM docker.io/node:20-alpine\n  # Or: FROM registry.company.com/node:20-alpine",
+    "learnMore": "Study: Container registry security, supply chain attacks, image provenance"
+  },
+  "DL3027": {
+    "title": "Do not use apt — use apt-get instead",
+    "severity": "LOW",
+    "tool": "hadolint",
+    "why": "apt is designed for interactive terminal use and may produce different output or behaviour in non-interactive scripts. apt-get is the stable, scriptable interface.",
+    "fix": "Replace apt with apt-get:\n  # Bad:  RUN apt install -y curl\n  # Good: RUN apt-get install -y curl",
+    "learnMore": "Study: Debian apt vs apt-get, non-interactive package installation"
+  },
+  "DL3028": {
+    "title": "Pin versions in gem install",
+    "severity": "MEDIUM",
+    "tool": "hadolint",
+    "why": "Without pinned versions, gem install pulls the latest gem on every build, making builds non-reproducible and potentially introducing breaking changes.",
+    "fix": "Pin the gem version:\n  # Bad:  RUN gem install rails\n  # Good: RUN gem install rails -v 7.1.0",
+    "learnMore": "Study: Ruby gem versioning, Gemfile.lock, Bundler"
+  },
+  "DL4000": {
+    "title": "MAINTAINER is deprecated",
+    "severity": "LOW",
+    "tool": "hadolint",
+    "why": "The MAINTAINER instruction is deprecated since Docker 1.13. It does not add metadata in a standard way and will be ignored by modern tools.",
+    "fix": "Remove MAINTAINER and use a LABEL instead:\n  # Bad:  MAINTAINER John Doe <john@example.com>\n  # Good: LABEL maintainer=\"John Doe <john@example.com>\"",
+    "learnMore": "Study: Docker LABEL instruction, OCI image annotations"
+  },
+  "DL4001": {
+    "title": "Use either wget or curl — not both",
+    "severity": "LOW",
+    "tool": "hadolint",
+    "why": "Installing both wget and curl adds unnecessary packages to the image. Each extra package increases image size and attack surface. Pick one and use it consistently.",
+    "fix": "Choose one tool and remove the other:\n  # Pick curl:\n  RUN apt-get install -y --no-install-recommends curl \\\n   && rm -rf /var/lib/apt/lists/*",
+    "learnMore": "Study: Docker image minimisation, attack surface reduction"
+  },
+  "DL4003": {
+    "title": "Multiple CMD instructions found",
+    "severity": "HIGH",
+    "tool": "hadolint",
+    "why": "Only the last CMD instruction is used. Having multiple CMD instructions is misleading and suggests a misunderstanding of how Dockerfiles work.",
+    "fix": "Keep only one CMD instruction at the end of the Dockerfile:\n  CMD [\"node\", \"server.js\"]",
+    "learnMore": "Study: Docker CMD vs ENTRYPOINT, Dockerfile instruction reference"
+  },
+  "DL4004": {
+    "title": "Multiple ENTRYPOINT instructions found",
+    "severity": "HIGH",
+    "tool": "hadolint",
+    "why": "Only the last ENTRYPOINT is used. Having multiple ENTRYPOINT instructions is a bug — the first ones are silently ignored.",
+    "fix": "Keep only one ENTRYPOINT instruction:\n  ENTRYPOINT [\"node\", \"server.js\"]",
+    "learnMore": "Study: Docker ENTRYPOINT, CMD vs ENTRYPOINT"
+  },
+  "DL4005": {
+    "title": "Use SHELL to set default shell",
+    "severity": "LOW",
+    "tool": "hadolint",
+    "why": "The default shell in Dockerfile RUN commands is /bin/sh -c, which does not support features like arrays or advanced bash syntax. If your RUN commands require bash, set the SHELL explicitly.",
+    "fix": "Set the shell before using bash features:\n  SHELL [\"/bin/bash\", \"-o\", \"pipefail\", \"-c\"]\n  RUN my-bash-script.sh",
+    "learnMore": "Study: Docker SHELL instruction, bash vs sh differences"
+  },
+  "SC2086": {
+    "title": "Double-quote variable to prevent word splitting",
+    "severity": "LOW",
+    "tool": "hadolint",
+    "why": "In shell scripts, unquoted variables undergo word splitting and glob expansion. If a variable contains spaces or special characters, the command will behave unexpectedly.",
+    "fix": "Always double-quote variables:\n  # Bad:  RUN echo $MY_VAR\n  # Good: RUN echo \"$MY_VAR\"",
+    "learnMore": "Study: Bash word splitting, quoting rules, ShellCheck SC2086"
+  },
+  "SC2039": {
+    "title": "Feature not supported in POSIX sh",
+    "severity": "LOW",
+    "tool": "hadolint",
+    "why": "The Dockerfile default shell is /bin/sh (POSIX sh). Features like arrays, [[ ]], local, and source are bash-specific and will fail in sh.",
+    "fix": "Either switch to bash with the SHELL instruction, or rewrite using POSIX sh syntax:\n  SHELL [\"/bin/bash\", \"-c\"]\n  RUN source /etc/profile",
+    "learnMore": "Study: POSIX sh vs bash, Docker SHELL instruction, ShellCheck"
+  },
+  "SC2046": {
+    "title": "Quote command substitution to prevent word splitting",
+    "severity": "LOW",
+    "tool": "hadolint",
+    "why": "Unquoted command substitution $(cmd) is subject to word splitting. If the output contains spaces, the shell splits it into multiple arguments unexpectedly.",
+    "fix": "Quote command substitutions:\n  # Bad:  RUN echo $(cat file.txt)\n  # Good: RUN echo \"$(cat file.txt)\"",
+    "learnMore": "Study: Bash command substitution, word splitting, ShellCheck SC2046"
+  },
   "DL3002": {
     "title": "Last USER should not be root",
     "severity": "HIGH",

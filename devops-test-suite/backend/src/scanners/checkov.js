@@ -124,6 +124,8 @@ function parseCheckovOutput(rawOutput) {
     line:     check.file_line_range?.[0] || null,
     tool:     'checkov',
     resource: check.resource || '',
+    // checkov provides a guideline URL — used by explanations.js as fallback fix
+    guideline: check.guideline || '',
   }))
 
   return enrichAll(rawFindings)

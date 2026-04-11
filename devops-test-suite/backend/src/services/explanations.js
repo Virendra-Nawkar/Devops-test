@@ -28,17 +28,40 @@ function enrich(rawFinding) {
   const explanation = db[code] || null
 
   if (!explanation) {
-    // No match in our database — return the raw finding with defaults
+    // No match in our database — use data the scanner itself already provides.
+    // tfsec always includes:  impact (why) + resolution (fix) + links[0] (learnMore)
+    // checkov includes:       guideline URL
+    // hadolint includes:      message (the rule text itself)
+    // Anything is better than "check the docs".
+
+    const why = rawFinding.impact
+      ? rawFinding.impact
+      : rawFinding.message
+      ? `Rule ${code}: ${rawFinding.message}`
+      : `No explanation found for rule ${code}.`
+
+    const fix = rawFinding.resolution
+      ? rawFinding.resolution
+      : rawFinding.guideline
+      ? `See the full remediation guide at:\n${rawFinding.guideline}`
+      : `Search for "${code}" in the ${rawFinding.tool || 'scanner'} documentation.`
+
+    const learnMore = rawFinding.guideline
+      ? rawFinding.guideline
+      : rawFinding.links
+      ? rawFinding.links
+      : `Search: "${code} ${rawFinding.tool || ''} fix" for detailed guidance.`
+
     return {
       code:      rawFinding.code      || 'UNKNOWN',
       severity:  rawFinding.severity  || 'INFO',
       message:   rawFinding.message   || 'No description available',
       line:      rawFinding.line      || null,
       tool:      rawFinding.tool      || 'unknown',
-      title:     rawFinding.title     || rawFinding.message || 'Finding',
-      why:       'No explanation available yet for this rule.',
-      fix:       'Check the tool documentation for remediation guidance.',
-      learnMore: 'Refer to the official tool documentation.',
+      title:     rawFinding.title     || rawFinding.message || code,
+      why,
+      fix,
+      learnMore,
     }
   }
 
