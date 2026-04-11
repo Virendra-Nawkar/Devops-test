@@ -53,28 +53,30 @@ function enrich(rawFinding) {
       : `Search: "${code} ${rawFinding.tool || ''} fix" for detailed guidance.`
 
     return {
-      code:      rawFinding.code      || 'UNKNOWN',
-      severity:  rawFinding.severity  || 'INFO',
-      message:   rawFinding.message   || 'No description available',
-      line:      rawFinding.line      || null,
-      tool:      rawFinding.tool      || 'unknown',
-      title:     rawFinding.title     || rawFinding.message || code,
+      code:        rawFinding.code      || 'UNKNOWN',
+      severity:    rawFinding.severity  || 'INFO',
+      message:     rawFinding.message   || 'No description available',
+      line:        rawFinding.line      || null,
+      tool:        rawFinding.tool      || 'unknown',
+      title:       rawFinding.title     || rawFinding.message || code,
       why,
       fix,
       learnMore,
+      codeSnippet: rawFinding.codeSnippet || null,
     }
   }
 
   return {
-    code:      code,
-    severity:  explanation.severity  || rawFinding.severity  || 'INFO',
-    message:   rawFinding.message    || explanation.title    || '',
-    line:      rawFinding.line       || null,
-    tool:      explanation.tool      || rawFinding.tool      || 'unknown',
-    title:     explanation.title,
-    why:       explanation.why,
-    fix:       explanation.fix,
-    learnMore: explanation.learnMore,
+    code:        code,
+    severity:    explanation.severity  || rawFinding.severity  || 'INFO',
+    message:     rawFinding.message    || explanation.title    || '',
+    line:        rawFinding.line       || null,
+    tool:        explanation.tool      || rawFinding.tool      || 'unknown',
+    title:       explanation.title,
+    why:         explanation.why,
+    fix:         explanation.fix,
+    learnMore:   explanation.learnMore,
+    codeSnippet: rawFinding.codeSnippet || null,
   }
 }
 

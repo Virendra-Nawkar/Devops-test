@@ -4,6 +4,7 @@
 
 const { execSync } = require('child_process')
 const { enrichAll } = require('../services/explanations')
+const { extractSnippet } = require('../services/codeExtractor')
 
 // Map hadolint severity levels to our standard severity labels
 const SEVERITY_MAP = {
@@ -70,12 +71,15 @@ async function runHadolint(filePath) {
   }
 
   // Convert hadolint output format to our standard finding format
+  // codeSnippet: extract the actual lines from the file so the user sees exactly
+  // what triggered the rule (hadolint always provides a line number)
   const rawFindings = parsed.map(item => ({
-    code:     item.code     || 'DL0000',
-    severity: SEVERITY_MAP[(item.level || 'info').toLowerCase()] || 'LOW',
-    message:  item.message  || '',
-    line:     item.line     || null,
-    tool:     'hadolint',
+    code:        item.code     || 'DL0000',
+    severity:    SEVERITY_MAP[(item.level || 'info').toLowerCase()] || 'LOW',
+    message:     item.message  || '',
+    line:        item.line     || null,
+    tool:        'hadolint',
+    codeSnippet: item.line ? extractSnippet(filePath, item.line, 2) : null,
   }))
 
   // Enrich with plain-English explanations from our database

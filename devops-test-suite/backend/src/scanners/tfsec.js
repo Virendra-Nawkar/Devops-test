@@ -4,6 +4,7 @@
 
 const { execSync } = require('child_process')
 const { enrichAll } = require('../services/explanations')
+const { extractRange } = require('../services/codeExtractor')
 
 // Map tfsec severity levels to our standard labels
 const SEVERITY_MAP = {
@@ -72,19 +73,27 @@ async function runTfsec(dirPath) {
   const results = parsed.results || []
 
   // Convert tfsec finding format to our standard format
-  // tfsec always provides impact (why it matters) and resolution (how to fix it)
-  // — pass these through so explanations.js can use them as fallback
-  const rawFindings = results.map(item => ({
-    code:       item.rule_id || item.long_id || 'UNKNOWN',
-    severity:   SEVERITY_MAP[(item.severity || 'LOW').toUpperCase()] || 'LOW',
-    message:    item.description || item.rule_description || '',
-    line:       item.location?.start_line || null,
-    tool:       'tfsec',
-    // These three fields are used by explanations.js when the code is not in our DB
-    impact:     item.impact      || '',
-    resolution: item.resolution  || '',
-    guideline:  (item.links || [])[0] || '',
-  }))
+  // tfsec provides impact+resolution (used as fallback explanation) and full location info
+  const rawFindings = results.map(item => {
+    const filePath  = item.location?.filename   || null
+    const startLine = item.location?.start_line || null
+    const endLine   = item.location?.end_line   || null
+
+    return {
+      code:        item.rule_id || item.long_id || 'UNKNOWN',
+      severity:    SEVERITY_MAP[(item.severity || 'LOW').toUpperCase()] || 'LOW',
+      message:     item.description || item.rule_description || '',
+      line:        startLine,
+      tool:        'tfsec',
+      impact:      item.impact      || '',
+      resolution:  item.resolution  || '',
+      guideline:   (item.links || [])[0] || '',
+      // Extract the actual code block that triggered this rule
+      codeSnippet: filePath && startLine
+        ? extractRange(filePath, startLine, endLine, 1)
+        : null,
+    }
+  })
 
   return enrichAll(rawFindings)
 }

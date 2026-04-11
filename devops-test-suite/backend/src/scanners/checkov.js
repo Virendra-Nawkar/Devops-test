@@ -4,6 +4,7 @@
 
 const { execSync } = require('child_process')
 const { enrichAll } = require('../services/explanations')
+const { extractRange } = require('../services/codeExtractor')
 
 /**
  * isCheckovInstalled — checks if the checkov binary/command is available
@@ -115,18 +116,27 @@ function parseCheckovOutput(rawOutput) {
     failedChecks = parsed.results.failed_checks || []
   }
 
-  const rawFindings = failedChecks.map(check => ({
-    code:     check.check_id || 'UNKNOWN',
-    severity: mapCheckovSeverity(check.check_id),
-    message:  check.check_result?.result === 'failed'
-      ? `${check.check_id}: ${check.resource || ''} failed`
-      : check.check_id,
-    line:     check.file_line_range?.[0] || null,
-    tool:     'checkov',
-    resource: check.resource || '',
-    // checkov provides a guideline URL — used by explanations.js as fallback fix
-    guideline: check.guideline || '',
-  }))
+  const rawFindings = failedChecks.map(check => {
+    const filePath  = check.repo_file_path || check.file_path || null
+    const startLine = check.file_line_range?.[0] || null
+    const endLine   = check.file_line_range?.[1] || null
+
+    return {
+      code:     check.check_id || 'UNKNOWN',
+      severity: mapCheckovSeverity(check.check_id),
+      message:  check.check_result?.result === 'failed'
+        ? `${check.check_id}: ${check.resource || ''} failed`
+        : check.check_id,
+      line:        startLine,
+      tool:        'checkov',
+      resource:    check.resource  || '',
+      guideline:   check.guideline || '',
+      // Extract the actual code block that failed the check
+      codeSnippet: filePath && startLine
+        ? extractRange(filePath, startLine, endLine, 1)
+        : null,
+    }
+  })
 
   return enrichAll(rawFindings)
 }
