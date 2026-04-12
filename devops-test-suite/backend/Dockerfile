@@ -18,8 +18,10 @@ RUN wget -qO /usr/local/bin/hadolint \
     && chmod +x /usr/local/bin/hadolint
 
 # ── Install Trivy ─────────────────────────────────────────────────────────────
-RUN wget -qO- https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
-    | sh -s -- -b /usr/local/bin v0.49.1
+RUN wget -qO /tmp/trivy.tar.gz \
+    https://github.com/aquasecurity/trivy/releases/download/v0.49.1/trivy_0.49.1_Linux-64bit.tar.gz \
+    && tar -xzf /tmp/trivy.tar.gz -C /usr/local/bin trivy \
+    && rm /tmp/trivy.tar.gz
 
 # ── Install tfsec ─────────────────────────────────────────────────────────────
 RUN wget -qO /usr/local/bin/tfsec \
