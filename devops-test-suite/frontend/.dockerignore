@@ -1,0 +1,11 @@
+node_modules
+npm-debug.log*
+.npm
+
+# Build output — will be regenerated inside the builder stage
+dist/
+
+# Editor / OS files
+.DS_Store
+.vscode/
+*.swp

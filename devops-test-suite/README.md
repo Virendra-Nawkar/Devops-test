@@ -1,285 +1,704 @@
 # DevOps Test Suite
 
-A unified **Infrastructure Security Dashboard** for DevOps learners. Upload Dockerfiles, Kubernetes YAML, and Terraform files to get instant security scores with plain-English explanations and concrete fixes.
+> A unified **Infrastructure Security Dashboard** — upload Dockerfiles, Kubernetes YAML, and Terraform files to get instant security scores with plain-English explanations and exact code fixes.
+
+Built for DevOps learners who want hands-on practice with real open-source security tools.
 
 ---
 
-## What This Does
+## Table of Contents
 
-| Upload | Tool(s) Used | What You Learn |
-|--------|-------------|----------------|
-| Dockerfile | Hadolint + Trivy | Best practices, CVEs |
-| Kubernetes YAML | Kubeconform + Polaris | Schema errors, best practices |
-| Terraform `.tf` files | tfsec + Checkov | Security misconfigurations |
-
-Every finding includes:
-- **Why it matters** — plain English, no jargon
-- **How to fix it** — exact code to copy-paste
-- **Learn more** — topics to study
+1. [What This Project Does](#1-what-this-project-does)
+2. [Architecture Overview](#2-architecture-overview)
+3. [Prerequisites](#3-prerequisites)
+4. [Setup — Without Docker (Direct / Dev mode)](#4-setup--without-docker-direct--dev-mode)
+5. [Setup — With Docker (Production mode)](#5-setup--with-docker-production-mode)
+6. [How to Use the Dashboard](#6-how-to-use-the-dashboard)
+7. [Scanner Tools Explained](#7-scanner-tools-explained)
+8. [How Scoring Works](#8-how-scoring-works)
+9. [Understanding Findings](#9-understanding-findings)
+10. [API Reference](#10-api-reference)
+11. [Changing Your VM IP](#11-changing-your-vm-ip)
+12. [Troubleshooting](#12-troubleshooting)
+13. [Project Structure](#13-project-structure)
 
 ---
 
-## How It Works
+## 1. What This Project Does
+
+You upload an infrastructure file → the app runs multiple security scanners → you get a score out of 100 with every issue explained in plain English.
+
+| Upload this | Tools used | What you learn |
+|-------------|-----------|----------------|
+| **Dockerfile** | Hadolint (lint) + Trivy (CVE scan) | Best practices, root user, CVEs |
+| **Kubernetes YAML** | Kubeconform (schema) + Polaris (best practices) | Probes, resource limits, security context |
+| **Terraform `.tf` files** | tfsec (security) + Checkov (compliance) | Open ports, unencrypted storage, public IPs |
+
+Every finding expands to show:
+- The **exact lines** in your file that caused the issue (highlighted in red)
+- **Why it matters** in plain English
+- **How to fix it** with a sample code block
+- A **learn more** link to the official docs
+
+---
+
+## 2. Architecture Overview
 
 ```
-Browser (port 80)
-    │  uploads file
-    ▼
-React Frontend (Vite, port 80)
-    │  POST /api/scan/...
-    ▼
-Node.js Backend (Express, port 81)
-    │  runs CLI tools
-    ├─ hadolint → parse JSON → enrich with explanations.json
-    ├─ trivy    → parse JSON → merge findings
-    ├─ tfsec    → parse JSON → enrich
-    ├─ checkov  → parse JSON → deduplicate
-    ├─ kubeconform → parse JSONL
-    └─ polaris  → parse JSON → score engine
-    │
-    ▼
-Score (0-100) + Grade + Findings list
-    │
-    ▼
-Response JSON → displayed in dashboard
+┌────────────────────────────────────────────────────────────────┐
+│  Your Browser                                                  │
+│  http://VM_IP:80                                               │
+└──────────────────────┬─────────────────────────────────────────┘
+                       │ HTTP (port 80)
+┌──────────────────────▼─────────────────────────────────────────┐
+│  Frontend  — React 18 + Vite + Tailwind CSS (port 80)          │
+│  • Upload zones (drag & drop)                                  │
+│  • Score circles with animation                                │
+│  • Expandable findings accordion                               │
+│  • Scan history panel                                          │
+└──────────────────────┬─────────────────────────────────────────┘
+                       │ /api/* proxy (port 81)
+┌──────────────────────▼─────────────────────────────────────────┐
+│  Backend  — Node.js 20 + Express (port 81)                     │
+│  • Multer: receives uploaded files                             │
+│  • child_process: runs scanner CLIs                            │
+│  • explanations.json: 70+ rule explanations                    │
+│  • scoreEngine: calculates score 0-100                         │
+│  • historyStore: saves last 10 scans to JSON file              │
+└──────────┬──────────┬──────────┬────────────────────────────────┘
+           │          │          │
+     ┌─────▼──┐  ┌────▼───┐  ┌──▼──────┐
+     │Hadolint│  │  tfsec │  │Kubecnfrm│
+     │ Trivy  │  │Checkov │  │ Polaris │
+     └────────┘  └────────┘  └─────────┘
+     CLI tools installed on the host machine
 ```
+
+**Flow:**
+1. Browser uploads file → POST /api/scan/docker (or k8s / terraform)
+2. Express saves it to `uploads/` temporarily
+3. Scanner CLIs run on the file, output JSON
+4. Backend parses JSON → looks up explanation in database → calculates score
+5. Returns `{ score, grade, findings: [{code, line, codeSnippet, why, fix}] }`
+6. Frontend renders results with animated score circle and accordion findings
 
 ---
 
-## Prerequisites
+## 3. Prerequisites
 
-Install these on your **Linux VM or Mac** before running the project:
+### For Direct / Dev Mode (no Docker)
 
-| Tool | Why needed |
-|------|-----------|
-| Node.js 20+ | Runs the backend and frontend |
-| npm | Installs Node dependencies |
-| Python3 + pip3 | Required for Checkov |
-| curl / wget | Used by install-tools.sh |
-| git | To clone and pull the repo |
+Install these on your **Linux VM or Mac**:
 
-**Install Node.js 20 on Ubuntu/Debian:**
+#### Node.js 20+
 ```bash
+# Ubuntu / Debian
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt-get install -y nodejs
+
+# Verify
+node -v    # should show v20.x.x
+npm -v     # should show 10.x.x
+```
+
+#### Python 3 + pip3 (required for Checkov)
+```bash
+# Ubuntu / Debian
+sudo apt-get install -y python3 python3-pip
+
+# Verify
+python3 --version   # 3.8+
+pip3 --version
+```
+
+#### System utilities
+```bash
+sudo apt-get install -y curl wget git ca-certificates
+```
+
+#### Fix port permissions (Linux only — ports 80 and 81)
+```bash
+# Allow non-root processes to bind to ports 80+
+sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80
+
+# Make permanent (survives reboot)
+echo "net.ipv4.ip_unprivileged_port_start=80" | sudo tee -a /etc/sysctl.conf
+```
+
+#### Scanner tools (installed via the included script)
+```bash
+sudo bash install-tools.sh
+```
+Installs: **Hadolint**, **Trivy**, **tfsec**, **Checkov**, **Kubeconform**, **Polaris**
+
+---
+
+### For Docker / Production Mode
+
+Only two things needed:
+
+```bash
+# Docker Engine
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER   # then log out and back in
+
+# Docker Compose plugin
+sudo apt-get install -y docker-compose-plugin
+
+# Verify
+docker --version
+docker compose version
 ```
 
 ---
 
-## Setup — Step by Step
+## 4. Setup — Without Docker (Direct / Dev mode)
 
-### Step 1: Clone the repository
+Use this mode for development and learning. Hot-reload is active on both frontend and backend.
+
+### Step 1 — Clone the repo
 ```bash
 git clone https://github.com/Virendra-Nawkar/Devops-test.git
 cd Devops-test/devops-test-suite
 ```
 
-### Step 2: Install scanner tools (one-time)
+### Step 2 — Set your VM IP
 ```bash
-bash install-tools.sh
+nano backend/.env
 ```
-This installs: Hadolint, Trivy, tfsec, Checkov, Kubeconform, Polaris.
-Takes 2-5 minutes. Run as root on Linux (`sudo bash install-tools.sh`).
+Change these two lines to match your VM's IP:
+```
+VM_IP=YOUR_VM_IP
+CORS_ORIGIN=http://YOUR_VM_IP
+```
 
-### Step 3: Start the backend
+### Step 3 — Install scanner tools (one-time)
+```bash
+sudo bash install-tools.sh
+```
+
+### Step 4 — Add Checkov to PATH
+```bash
+echo 'export PATH=$PATH:$HOME/.local/bin' >> ~/.bashrc
+source ~/.bashrc
+```
+
+### Step 5 — Start the backend (Terminal 1)
 ```bash
 cd backend
 npm install
 node src/server.js
 ```
-Backend runs on **port 81**. You should see the startup banner.
+Expected output:
+```
+╔════════════════════════════════════════════════╗
+║      DevOps Test Suite — Backend API           ║
+║  Listening on  http://0.0.0.0:81               ║
+╚════════════════════════════════════════════════╝
+```
 
-### Step 4: Start the frontend (new terminal)
+### Step 6 — Start the frontend (Terminal 2)
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-Frontend runs on **port 80**.
-
-### Step 5: Open the dashboard
+Expected output:
 ```
-http://20.12.224.28:80        ← from your Windows browser (VM IP)
-http://localhost:80           ← if running locally
+VITE v5.x  ready in 290ms
+➜  Local:   http://localhost:80/
+➜  Network: http://YOUR_VM_IP:80/
+```
+
+### Step 7 — Open the dashboard
+```
+http://YOUR_VM_IP:80
 ```
 
 ---
 
-## How to Test with Sample Files
+## 5. Setup — With Docker (Production mode)
 
-The `sample-files/` folder contains ready-made test files:
+Use this mode to deploy permanently on a server. Everything runs in containers — no manual tool installation needed.
 
-| File | Expected Score | Use to test |
-|------|---------------|-------------|
-| `bad.Dockerfile` | ~40 | Many Dockerfile issues |
-| `good.Dockerfile` | ~95 | Well-written Dockerfile |
-| `bad-deployment.yaml` | ~30 | Many K8s misconfigurations |
-| `good-deployment.yaml` | ~95 | Well-configured K8s |
-| `bad-main.tf` | ~20 | Many Terraform issues |
+### Step 1 — Clone the repo
+```bash
+git clone https://github.com/Virendra-Nawkar/Devops-test.git
+cd Devops-test/devops-test-suite
+```
+
+### Step 2 — Set your VM IP
+```bash
+nano .env
+```
+```
+VM_IP=YOUR_VM_IP
+```
+
+### Step 3 — Build and start all containers
+```bash
+docker compose up --build -d
+```
+
+First build takes **5-10 minutes** (installs all scanner tools inside the container).
+
+### Step 4 — Open the dashboard
+```
+http://YOUR_VM_IP:80
+```
+
+### Useful Docker commands
+```bash
+# View logs
+docker compose logs -f
+
+# View logs for one service
+docker compose logs -f backend
+
+# Stop everything
+docker compose down
+
+# Stop and delete volumes (wipes scan history)
+docker compose down -v
+
+# Rebuild after code changes
+docker compose up --build -d
+
+# Check container status
+docker compose ps
+
+# Run a command inside the backend container
+docker compose exec backend node -e "console.log('hello')"
+```
+
+---
+
+## 6. How to Use the Dashboard
+
+### Quick start with sample files
+
+The `sample-files/` folder has ready-made test files. Use them to try the dashboard immediately:
+
+| File | Expected score | Purpose |
+|------|----------------|---------|
+| `bad.Dockerfile` | ~40 | Tests all Dockerfile rules |
+| `good.Dockerfile` | ~95 | Shows what good looks like |
+| `bad-deployment.yaml` | ~30 | Tests K8s misconfigurations |
+| `good-deployment.yaml` | ~95 | Best-practice K8s |
+| `bad-main.tf` | ~20 | Tests Terraform security issues |
 | `good-main.tf` | ~90 | Secure Terraform |
 
-**Try it:**
-1. Click the **Dockerfile** tab
-2. Drop `sample-files/bad.Dockerfile` into the upload zone
-3. Click **Scan Dockerfile**
-4. See the score and click each finding to expand the explanation
+### Step-by-step usage
+
+**1. Choose a tab** — Dockerfile, Kubernetes, or Terraform
+
+**2. Upload your file**
+- Click the dashed upload zone, or drag a file onto it
+- For Terraform: hold Ctrl/Cmd to select multiple `.tf` files at once
+- For Dockerfile with CVE scanning: type a Docker image name in the optional field (e.g. `ubuntu:22.04`)
+
+**3. Click Scan**
+- Watch the progress bar show which scanner is running
+- Scan takes 3–15 seconds (longer if Trivy pulls an image for the first time)
+
+**4. Read the results**
+- The score circle shows your score (0–100) with a grade
+- The Overall Report Card at the top shows all three scan types together
+- Click any finding row to expand it and see:
+  - The exact lines from your file (error line highlighted in red)
+  - Why the issue matters
+  - A fixed code sample
+  - A learn-more link
+
+**5. Filter findings**
+- Click severity pills (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`) to filter
+- Click `ALL` to show everything
+- Findings are sorted most-severe first
+
+**6. Check history**
+- Click the **History** button (top right)
+- See your last 10 scans with scores and timestamps
 
 ---
 
-## Scanner Tools Explained
+## 7. Scanner Tools Explained
 
-### Hadolint
-- **What:** Lints Dockerfiles for best practice violations
-- **Checks:** Root user, pinned versions, HEALTHCHECK, CMD form
+### Hadolint — Dockerfile linter
+- **What it does:** Reads your Dockerfile line by line and checks it against a list of rules
+- **Rule format:** `DL3xxx` (Dockerfile rules), `SC2xxx` (shell script rules)
+- **Example catches:** Running as root, missing version pins, wrong CMD format
 - **Docs:** https://github.com/hadolint/hadolint
 
-### Trivy
-- **What:** Scans Docker images for known CVEs (vulnerabilities)
-- **Database:** Uses the NVD, GitHub Advisory, and OS vendor databases
+### Trivy — CVE scanner
+- **What it does:** Scans a Docker image against a database of known CVEs (Common Vulnerabilities and Exposures)
+- **Requires:** A Docker image name (e.g. `ubuntu:22.04`) in the optional field
+- **CVE database:** NVD, GitHub Advisory, OS vendor databases (updated regularly)
 - **Docs:** https://github.com/aquasecurity/trivy
 
-### tfsec
-- **What:** Static analysis of Terraform code for security issues
-- **Checks:** Open security groups, unencrypted storage, public IPs
+### tfsec — Terraform security scanner
+- **What it does:** Statically analyses `.tf` files for security misconfigurations
+- **Rule format:** `AVD-AZU-xxxx`, `AVD-AWS-xxxx`, `AVD-GCP-xxxx`
+- **Example catches:** Open security groups, unencrypted storage, public IP addresses
 - **Docs:** https://github.com/aquasecurity/tfsec
 
-### Checkov
-- **What:** Policy-as-code framework for Terraform, K8s, and more
-- **Checks:** CKV_ rule IDs covering hundreds of compliance rules
+### Checkov — Terraform + Kubernetes compliance scanner
+- **What it does:** Policy-as-code — checks files against hundreds of compliance rules
+- **Rule format:** `CKV_K8S_xx`, `CKV_AZURE_xx`, `CKV_AWS_xx`, `CKV_DOCKER_x`
+- **Example catches:** Missing health probes, no resource limits, insecure storage
 - **Docs:** https://www.checkov.io/
 
-### Kubeconform
-- **What:** Validates Kubernetes YAML against the official API schema
-- **Checks:** Correct field names, required fields, API version
+### Kubeconform — Kubernetes schema validator
+- **What it does:** Validates your YAML against the official Kubernetes API schema
+- **Catches:** Wrong field names, missing required fields, wrong API versions
 - **Docs:** https://github.com/yannh/kubeconform
 
-### Polaris
-- **What:** Audits Kubernetes workloads for best practices
-- **Checks:** Probes, resource limits, security context, capabilities
+### Polaris — Kubernetes best-practice auditor
+- **What it does:** Checks Kubernetes workloads against Fairwinds best practices
+- **Rule format:** camelCase check names (e.g. `runAsNonRoot`, `cpuLimitsMissing`)
+- **Example catches:** No probes, missing resource limits, privilege escalation allowed
 - **Docs:** https://polaris.docs.fairwinds.com/
 
 ---
 
-## How Scoring Works
+## 8. How Scoring Works
 
-Start at **100 points**. Each finding deducts:
+Every scan starts at **100** and deducts points per finding:
 
-| Severity | Deduction |
-|----------|-----------|
-| CRITICAL | -20 |
-| HIGH     | -10 |
-| MEDIUM   | -5  |
-| LOW      | -2  |
-| INFO     | 0   |
+| Severity | Points deducted | Example |
+|----------|----------------|---------|
+| CRITICAL | −20 | Unrestricted internet ingress (NSG allows 0.0.0.0/0) |
+| HIGH | −10 | Container running as root |
+| MEDIUM | −5 | Missing liveness probe |
+| LOW | −2 | No --no-cache on apk add |
+| INFO | 0 | Informational finding only |
 
-Minimum score: **0** (never goes negative).
+Minimum score is **0** (never goes negative).
 
-| Score | Grade |
-|-------|-------|
-| 90-100 | Excellent |
-| 70-89  | Good |
-| 50-69  | Needs Work |
-| 0-49   | Critical Issues |
+| Score | Grade | Meaning |
+|-------|-------|---------|
+| 90–100 | Excellent | Production-ready — great patterns to copy |
+| 70–89 | Good | Minor issues — fix MEDIUM findings to reach 90+ |
+| 50–69 | Needs Work | Real problems present — fix HIGH findings first |
+| 0–49 | Critical Issues | Do not deploy — fix CRITICAL and HIGH immediately |
+
+**Example calculation:**
+```
+File has: 1 CRITICAL + 3 HIGH + 2 MEDIUM
+Score = 100 - (1×20) - (3×10) - (2×5) = 100 - 20 - 30 - 10 = 40 → Critical Issues
+```
 
 ---
 
-## Changing Your VM IP
+## 9. Understanding Findings
 
-If you deploy to a different server, update **`backend/.env`**:
+When you click a finding row it expands to four sections:
+
+```
+📍 Problematic code — line 10
+┌──────────────────────────────────────┐
+│  8  │  COPY . .                      │
+│  9  │  RUN pip3 install flask        │
+│▶ 10 │  USER root      ← red line     │
+│ 11  │  CMD python3 app.py            │
+└──────────────────────────────────────┘
+
+⚠️ Why this matters
+   Running as root inside a container means an attacker who breaks
+   in gets full system access...
+
+🔧 How to fix it
+┌─ ✓ Fixed version ──────────────────────┐
+│  RUN addgroup -S appgroup && \         │
+│      adduser -S appuser -G appgroup    │
+│  USER appuser                          │
+└────────────────────────────────────────┘
+
+📚 Learn more
+   Study: Linux user permissions, principle of least privilege
+```
+
+**Field meanings:**
+| Field | Meaning |
+|-------|---------|
+| Code (e.g. `DL3002`) | Rule ID — Google it for full official documentation |
+| Tool badge | Which scanner found it |
+| Line number | Which line in your file triggered the rule |
+| Code snippet | The actual lines from your file (error line in red) |
+| Why | The security risk this enables |
+| Fix | Exact code to paste into your file |
+| Learn more | Topics to study or direct link to the rule docs |
+
+---
+
+## 10. API Reference
+
+All endpoints are available at `http://YOUR_VM_IP:81/api/...`
+
+| Method | Endpoint | Body | Description |
+|--------|----------|------|-------------|
+| GET | `/api/ping` | — | Health check |
+| GET | `/api/scan/health` | — | Which scanner tools are installed |
+| GET | `/api/scan/history` | — | Last 10 scan results |
+| POST | `/api/scan/docker` | `dockerfile` (file), `imageName` (text, optional) | Scan a Dockerfile |
+| POST | `/api/scan/k8s` | `yamlFile` (file) | Scan a Kubernetes YAML |
+| POST | `/api/scan/terraform` | `tfFiles` (one or more files) | Scan Terraform files |
+
+### Example responses
+
+**GET /api/scan/health**
+```json
+{
+  "status": "all_ready",
+  "message": "6/6 scanner tools installed",
+  "tools": {
+    "hadolint":   { "installed": true, "version": "Haskell Dockerfile Linter 2.x" },
+    "trivy":      { "installed": true, "version": "Version: 0.x" },
+    "tfsec":      { "installed": true, "version": "v1.x" },
+    "checkov":    { "installed": true, "version": "3.x" },
+    "kubeconform":{ "installed": true, "version": "v0.x" },
+    "polaris":    { "installed": true, "version": "9.x" }
+  }
+}
+```
+
+**POST /api/scan/docker** (response shape)
+```json
+{
+  "score": 40,
+  "grade": "Critical Issues",
+  "color": "red",
+  "summary": { "CRITICAL": 0, "HIGH": 3, "MEDIUM": 4, "LOW": 2, "INFO": 0 },
+  "findings": [
+    {
+      "code": "DL3002",
+      "severity": "HIGH",
+      "title": "Last USER should not be root",
+      "message": "Last user should not be root",
+      "line": 10,
+      "tool": "hadolint",
+      "why": "Running as root means...",
+      "fix": "RUN addgroup -S appgroup...",
+      "learnMore": "Study: Linux user permissions...",
+      "codeSnippet": [
+        { "lineNum": 9,  "content": "RUN pip3 install flask", "isError": false },
+        { "lineNum": 10, "content": "USER root",              "isError": true  },
+        { "lineNum": 11, "content": "CMD python3 app.py",     "isError": false }
+      ]
+    }
+  ],
+  "fileName": "bad.Dockerfile",
+  "scannedAt": "2026-04-12T08:00:00.000Z"
+}
+```
+
+### Test with curl
+```bash
+# Ping
+curl http://localhost:81/api/ping
+
+# Tool health
+curl http://localhost:81/api/scan/health | python3 -m json.tool
+
+# Scan a Dockerfile
+curl -X POST http://localhost:81/api/scan/docker \
+  -F "dockerfile=@sample-files/bad.Dockerfile" | python3 -m json.tool
+
+# Scan K8s YAML
+curl -X POST http://localhost:81/api/scan/k8s \
+  -F "yamlFile=@sample-files/bad-deployment.yaml" | python3 -m json.tool
+
+# Scan Terraform
+curl -X POST http://localhost:81/api/scan/terraform \
+  -F "tfFiles=@sample-files/bad-main.tf" | python3 -m json.tool
+
+# Scan Dockerfile + Trivy CVE scan
+curl -X POST http://localhost:81/api/scan/docker \
+  -F "dockerfile=@sample-files/bad.Dockerfile" \
+  -F "imageName=ubuntu:22.04" | python3 -m json.tool
+```
+
+---
+
+## 11. Changing Your VM IP
+
+### Direct mode
+Edit `backend/.env`:
 ```
 VM_IP=YOUR_NEW_IP
 CORS_ORIGIN=http://YOUR_NEW_IP
 ```
-Then restart the backend.
-
----
-
-## API Reference
-
-| Method | URL | Description |
-|--------|-----|-------------|
-| GET | `/api/ping` | Health check |
-| GET | `/api/scan/health` | Check which tools are installed |
-| GET | `/api/scan/history` | Last 10 scan results |
-| POST | `/api/scan/docker` | Scan a Dockerfile |
-| POST | `/api/scan/k8s` | Scan a Kubernetes YAML |
-| POST | `/api/scan/terraform` | Scan Terraform files |
-
----
-
-## Troubleshooting
-
-**Backend won't start: `EADDRINUSE: port 81`**
-```bash
-kill $(lsof -t -i:81)
-```
-
-**Frontend won't start: `EADDRINUSE: port 80`**
-```bash
-# Port 80 needs root on Linux — run with sudo
-sudo npm run dev
-# Or change port in vite.config.js to 8080
-```
-
-**"CORS error" in browser console**
-Edit `backend/.env`:
-```
-CORS_ORIGIN=http://YOUR_VM_IP
-```
 Restart the backend.
 
-**Scanner shows "TOOL_MISSING" finding**
-Run `bash install-tools.sh` to install missing tools. Check with:
+### Docker mode
+Edit the root `.env`:
+```
+VM_IP=YOUR_NEW_IP
+```
+Rebuild: `docker compose up --build -d`
+
+---
+
+## 12. Troubleshooting
+
+### Port permission denied (Error: EACCES port 80 or 81)
 ```bash
-curl http://localhost:81/api/scan/health
+sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80
+echo "net.ipv4.ip_unprivileged_port_start=80" | sudo tee -a /etc/sysctl.conf
 ```
 
-**Checkov not found after pip3 install**
+### Port already in use
 ```bash
-# Add pip user bin to PATH
+kill $(lsof -t -i:81)   # kill backend
+kill $(lsof -t -i:80)   # kill frontend
+```
+
+### CORS error in browser console
+```
+Access to XMLHttpRequest blocked by CORS policy
+```
+Fix: Update `VM_IP` in `backend/.env` to match your current VM IP, then restart.
+
+### Scanner shows `TOOL_MISSING`
+```bash
+# See which tools are missing
+curl http://localhost:81/api/scan/health
+
+# Reinstall
+sudo bash install-tools.sh
+
+# Checkov specifically — add pip to PATH
 export PATH=$PATH:$HOME/.local/bin
 echo 'export PATH=$PATH:$HOME/.local/bin' >> ~/.bashrc
 ```
 
-**Port 80 access denied on Linux**
+### npm: command not found
 ```bash
-# Allow Node.js to bind to ports < 1024 without root
-sudo setcap 'cap_net_bind_service=+ep' $(which node)
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
+```
+
+### Docker build fails
+```bash
+# Clear Docker build cache and rebuild
+docker compose build --no-cache
+docker compose up -d
+```
+
+### Frontend shows blank page or cannot connect
+1. Make sure the backend is running and healthy: `curl http://localhost:81/api/ping`
+2. Check CORS: your browser URL must match the `CORS_ORIGIN` in backend `.env`
+3. In Docker mode: check `docker compose ps` and `docker compose logs backend`
+
+### Trivy scan is very slow (first time)
+Trivy downloads its vulnerability database on first run (~100 MB). This is cached for subsequent runs. Normal wait: 2–5 minutes first time, a few seconds after.
+
+---
+
+## 13. Project Structure
+
+```
+devops-test-suite/
+├── .env                          ← master config (VM_IP, ports)
+├── .gitignore
+├── docker-compose.yml            ← production Docker setup
+├── install-tools.sh              ← installs all 6 scanner tools (Linux/Mac)
+├── README.md
+├── WORKFLOW.md                   ← Windows→GitHub→Linux dev workflow
+│
+├── sample-files/                 ← test files for all 3 scan types
+│   ├── bad.Dockerfile            ← many issues, low score
+│   ├── good.Dockerfile           ← best practices, high score
+│   ├── bad-deployment.yaml       ← K8s misconfigurations
+│   ├── good-deployment.yaml      ← K8s best practices
+│   ├── bad-main.tf               ← Terraform security issues
+│   └── good-main.tf              ← secure Terraform
+│
+├── backend/
+│   ├── Dockerfile                ← production image with scanner tools built in
+│   ├── .dockerignore
+│   ├── .env                      ← backend config (VM_IP, PORT, CORS)
+│   ├── package.json
+│   └── src/
+│       ├── server.js             ← Express entry point (port 81)
+│       ├── routes/
+│       │   ├── scan.js           ← /history and /health endpoints
+│       │   ├── docker.js         ← POST /api/scan/docker
+│       │   ├── k8s.js            ← POST /api/scan/k8s
+│       │   └── terraform.js      ← POST /api/scan/terraform
+│       ├── scanners/
+│       │   ├── hadolint.js       ← runs hadolint CLI, extracts code snippets
+│       │   ├── trivy.js          ← runs trivy image/fs CLI
+│       │   ├── tfsec.js          ← runs tfsec CLI, extracts code snippets
+│       │   ├── checkov.js        ← runs checkov CLI, extracts code snippets
+│       │   ├── kubeconform.js    ← runs kubeconform CLI
+│       │   └── polaris.js        ← runs polaris audit CLI
+│       ├── services/
+│       │   ├── scoreEngine.js    ← calculates score 0-100 from findings
+│       │   ├── historyStore.js   ← read/write scan-history.json
+│       │   ├── explanations.js   ← enriches findings with why/fix/learnMore
+│       │   └── codeExtractor.js  ← extracts code lines from uploaded files
+│       └── data/
+│           └── explanations.json ← 70+ rule explanations database
+│
+└── frontend/
+    ├── Dockerfile                ← multi-stage: Vite build → nginx
+    ├── .dockerignore
+    ├── nginx.conf                ← nginx config with /api proxy to backend
+    ├── package.json
+    ├── vite.config.js            ← port 80, proxy /api→81, host 0.0.0.0
+    ├── tailwind.config.js        ← dark GitHub-style theme
+    ├── postcss.config.js
+    ├── index.html
+    └── src/
+        ├── App.jsx               ← root component, all scan state
+        ├── main.jsx              ← React entry point
+        ├── index.css             ← Tailwind + custom animations
+        ├── api/
+        │   └── scanApi.js        ← axios wrappers for all API calls
+        └── components/
+            ├── Header.jsx        ← top nav with tool health indicator
+            ├── EmptyState.jsx    ← SVG placeholder before first scan
+            ├── OverallReportCard.jsx ← three score circles side-by-side
+            ├── ScoreCircle.jsx   ← animated SVG donut chart
+            ├── UploadZone.jsx    ← drag-and-drop file upload
+            ├── ScanProgress.jsx  ← animated progress bar during scan
+            ├── FindingsList.jsx  ← score header + filtered findings list
+            ├── FindingItem.jsx   ← accordion: code snippet + why + fix
+            ├── SeverityBadge.jsx ← CRITICAL/HIGH/MEDIUM/LOW/INFO badge
+            └── HistoryPanel.jsx  ← slide-in history side panel
 ```
 
 ---
 
-## Project Structure
+## Quick Command Reference
 
-```
-devops-test-suite/
-├── install-tools.sh          ← installs scanner tools (Linux/Mac)
-├── .env                      ← VM IP and port config
-├── .gitignore
-├── README.md
-├── WORKFLOW.md               ← Windows → GitHub → Linux workflow guide
-├── sample-files/             ← test files for all three scan types
-│   ├── bad.Dockerfile
-│   ├── good.Dockerfile
-│   ├── bad-deployment.yaml
-│   ├── good-deployment.yaml
-│   ├── bad-main.tf
-│   └── good-main.tf
-├── frontend/                 ← React 18 + Vite + Tailwind (port 80)
-│   ├── package.json
-│   ├── vite.config.js
-│   ├── tailwind.config.js
-│   └── src/
-│       ├── App.jsx
-│       ├── api/scanApi.js
-│       └── components/
-└── backend/                  ← Node.js + Express (port 81)
-    ├── package.json
-    ├── .env
-    └── src/
-        ├── server.js
-        ├── routes/
-        ├── scanners/
-        ├── services/
-        └── data/explanations.json
+```bash
+# ── Direct mode ────────────────────────────────────────────────
+node -v && npm -v                         # check Node.js
+sudo bash install-tools.sh               # install scanner tools
+cd backend  && npm install && node src/server.js   # start backend
+cd frontend && npm install && npm run dev           # start frontend
+kill $(lsof -t -i:81)                    # stop backend
+kill $(lsof -t -i:80)                    # stop frontend
+
+# ── Docker mode ─────────────────────────────────────────────────
+docker compose up --build -d             # build and start
+docker compose down                      # stop
+docker compose logs -f                   # view logs
+docker compose ps                        # check status
+
+# ── Test API ────────────────────────────────────────────────────
+curl http://localhost:81/api/ping
+curl http://localhost:81/api/scan/health | python3 -m json.tool
+curl http://localhost:81/api/scan/history | python3 -m json.tool
+
+# ── Scan via curl ───────────────────────────────────────────────
+curl -X POST localhost:81/api/scan/docker \
+  -F "dockerfile=@sample-files/bad.Dockerfile" | python3 -m json.tool
+
+curl -X POST localhost:81/api/scan/k8s \
+  -F "yamlFile=@sample-files/bad-deployment.yaml" | python3 -m json.tool
+
+curl -X POST localhost:81/api/scan/terraform \
+  -F "tfFiles=@sample-files/bad-main.tf" | python3 -m json.tool
 ```

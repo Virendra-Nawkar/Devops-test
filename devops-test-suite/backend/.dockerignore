@@ -1,0 +1,19 @@
+node_modules
+npm-debug.log*
+.npm
+
+# Dev config
+.env
+*.env.local
+
+# Uploads are handled via Docker volume — don't bake them into the image
+uploads/
+
+# Scan history is on a volume too
+scan-history-data/
+scan-history.json
+
+# Editor / OS files
+.DS_Store
+.vscode/
+*.swp
