@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     wget \
     git \
+    gnupg \
     python3 \
     python3-pip \
     python3-venv \
@@ -17,11 +18,14 @@ RUN wget -qO /usr/local/bin/hadolint \
     https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64 \
     && chmod +x /usr/local/bin/hadolint
 
-# ── Install Trivy ─────────────────────────────────────────────────────────────
-RUN wget -qO /tmp/trivy.tar.gz \
-    https://github.com/aquasecurity/trivy/releases/download/v0.49.1/trivy_0.49.1_Linux-64bit.tar.gz \
-    && tar -xzf /tmp/trivy.tar.gz -C /usr/local/bin trivy \
-    && rm /tmp/trivy.tar.gz
+# ── Install Trivy via official apt repository ─────────────────────────────────
+RUN wget -qO- https://aquasecurity.github.io/trivy-repo/deb/public.key \
+    | gpg --dearmor > /usr/share/keyrings/trivy.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" \
+       > /etc/apt/sources.list.d/trivy.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends trivy \
+    && rm -rf /var/lib/apt/lists/*
 
 # ── Install tfsec ─────────────────────────────────────────────────────────────
 RUN wget -qO /usr/local/bin/tfsec \
