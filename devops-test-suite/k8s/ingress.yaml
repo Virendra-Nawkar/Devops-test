@@ -19,7 +19,7 @@ spec:
           service:
             name: backend-service
             port:
-              number: 81
+              number: 3000
       - path: /
         pathType: Prefix
         backend:
