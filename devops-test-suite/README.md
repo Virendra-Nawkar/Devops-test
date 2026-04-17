@@ -118,7 +118,7 @@ npm -v     # should show 10.x.x
 
 #### Step C — Fix port permissions (Linux only)
 
-By default Linux blocks non-root programs from using ports below 1024. Ports 80 and 81 both need this fix:
+Linux blocks non-root processes from binding to ports below 1024. Only port **80** (frontend) needs this fix — port **8081** (backend) is already above 1024 and works without it:
 
 ```bash
 # Apply immediately
@@ -231,7 +231,7 @@ Expected output:
 ```
 ╔════════════════════════════════════════════════╗
 ║      DevOps Test Suite — Backend API           ║
-║  Listening on  http://0.0.0.0:81               ║
+║  Listening on  http://0.0.0.0:8081               ║
 ╚════════════════════════════════════════════════╝
 ```
 
@@ -470,7 +470,7 @@ When you click a finding row it expands to four sections:
 
 ## 10. API Reference
 
-All endpoints are available at `http://YOUR_VM_IP:81/api/...`
+All endpoints are available at `http://YOUR_VM_IP:8081/api/...`
 
 | Method | Endpoint | Body | Description |
 |--------|----------|------|-------------|
@@ -532,25 +532,25 @@ All endpoints are available at `http://YOUR_VM_IP:81/api/...`
 ### Test with curl
 ```bash
 # Ping
-curl http://localhost:81/api/ping
+curl http://localhost:8081/api/ping
 
 # Tool health
-curl http://localhost:81/api/scan/health | python3 -m json.tool
+curl http://localhost:8081/api/scan/health | python3 -m json.tool
 
 # Scan a Dockerfile
-curl -X POST http://localhost:81/api/scan/docker \
+curl -X POST http://localhost:8081/api/scan/docker \
   -F "dockerfile=@sample-files/bad.Dockerfile" | python3 -m json.tool
 
 # Scan K8s YAML
-curl -X POST http://localhost:81/api/scan/k8s \
+curl -X POST http://localhost:8081/api/scan/k8s \
   -F "yamlFile=@sample-files/bad-deployment.yaml" | python3 -m json.tool
 
 # Scan Terraform
-curl -X POST http://localhost:81/api/scan/terraform \
+curl -X POST http://localhost:8081/api/scan/terraform \
   -F "tfFiles=@sample-files/bad-main.tf" | python3 -m json.tool
 
 # Scan Dockerfile + Trivy CVE scan
-curl -X POST http://localhost:81/api/scan/docker \
+curl -X POST http://localhost:8081/api/scan/docker \
   -F "dockerfile=@sample-files/bad.Dockerfile" \
   -F "imageName=ubuntu:22.04" | python3 -m json.tool
 ```
@@ -585,15 +585,15 @@ This project uses **only two ports**. Make sure both are open in your VM's firew
 | Port | Service | Who uses it |
 |------|---------|-------------|
 | **80** | Frontend (React / nginx) | Your browser opens this |
-| **81** | Backend (Express API) | Frontend talks to this internally |
+| **8081** | Backend (Express API) | Frontend talks to this internally |
 
-> **Azure / cloud VMs:** add inbound rules for port **80** and **81** in your Network Security Group (NSG). No other ports are needed.
+> **Azure / cloud VMs:** add inbound rules for port **80** and **8081** in your Network Security Group (NSG). No other ports are needed.
 
 ---
 
-### Port permission denied (Error: EACCES port 80 or 81)
+### Port permission denied (Error: EACCES port 80)
 
-Linux blocks non-root processes from binding to ports below 1024 by default.
+Linux blocks non-root processes from binding to ports below 1024 by default. Only port **80** (frontend) needs this fix — port **8081** (backend) works without any sysctl change.
 
 ```bash
 # Fix immediately
@@ -608,12 +608,12 @@ echo "net.ipv4.ip_unprivileged_port_start=80" | sudo tee -a /etc/sysctl.conf
 ### Port already in use
 
 ```bash
-sudo fuser -k 80/tcp    # kill whatever is on port 80
-sudo fuser -k 81/tcp    # kill whatever is on port 81
+sudo fuser -k 80/tcp      # kill whatever is on port 80   (frontend)
+sudo fuser -k 8081/tcp    # kill whatever is on port 8081  (backend)
 
 # Alternative if fuser is not available:
-kill $(lsof -t -i:80) 2>/dev/null || true
-kill $(lsof -t -i:81) 2>/dev/null || true
+kill $(lsof -t -i:80)   2>/dev/null || true
+kill $(lsof -t -i:8081) 2>/dev/null || true
 ```
 
 ---
@@ -659,7 +659,7 @@ nano backend/.env
 
 ```bash
 # Check which tools are missing
-curl http://localhost:81/api/scan/health | python3 -m json.tool
+curl http://localhost:8081/api/scan/health | python3 -m json.tool
 
 # Re-run the installer (safe to run multiple times — skips already-installed tools)
 sudo bash install-tools.sh
@@ -693,7 +693,7 @@ If it fails on the Checkov/pip step inside Docker, the `backend/Dockerfile` alre
 
 ### Frontend shows blank page or cannot connect
 
-1. Check the backend is alive: `curl http://localhost:81/api/ping`
+1. Check the backend is alive: `curl http://localhost:8081/api/ping`
 2. Check your browser URL uses the VM's IP, not `localhost` (unless you're on the VM itself)
 3. In Docker mode: `docker compose ps` — both containers should show `healthy`
 4. Check logs: `docker compose logs backend` or `docker compose logs frontend`
@@ -791,7 +791,7 @@ node -v && npm -v                         # check Node.js
 sudo bash install-tools.sh               # install scanner tools
 cd backend  && npm install && node src/server.js   # start backend
 cd frontend && npm install && npm run dev           # start frontend
-kill $(lsof -t -i:81)                    # stop backend
+kill $(lsof -t -i:8081)                    # stop backend
 kill $(lsof -t -i:80)                    # stop frontend
 
 # ── Docker mode ─────────────────────────────────────────────────
@@ -801,17 +801,17 @@ docker compose logs -f                   # view logs
 docker compose ps                        # check status
 
 # ── Test API ────────────────────────────────────────────────────
-curl http://localhost:81/api/ping
-curl http://localhost:81/api/scan/health | python3 -m json.tool
-curl http://localhost:81/api/scan/history | python3 -m json.tool
+curl http://localhost:8081/api/ping
+curl http://localhost:8081/api/scan/health | python3 -m json.tool
+curl http://localhost:8081/api/scan/history | python3 -m json.tool
 
 # ── Scan via curl ───────────────────────────────────────────────
-curl -X POST localhost:81/api/scan/docker \
+curl -X POST localhost:8081/api/scan/docker \
   -F "dockerfile=@sample-files/bad.Dockerfile" | python3 -m json.tool
 
-curl -X POST localhost:81/api/scan/k8s \
+curl -X POST localhost:8081/api/scan/k8s \
   -F "yamlFile=@sample-files/bad-deployment.yaml" | python3 -m json.tool
 
-curl -X POST localhost:81/api/scan/terraform \
+curl -X POST localhost:8081/api/scan/terraform \
   -F "tfFiles=@sample-files/bad-main.tf" | python3 -m json.tool
 ```

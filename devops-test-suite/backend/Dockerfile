@@ -69,10 +69,10 @@ RUN mkdir -p uploads scan-history-data \
 USER node
 
 # Expose backend port
-EXPOSE 81
+EXPOSE 8081
 
-# Health check — hits the /api/health endpoint
+# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-  CMD curl -f http://localhost:81/api/ping || exit 1
+  CMD curl -f http://localhost:8081/api/ping || exit 1
 
 CMD ["node", "src/server.js"]

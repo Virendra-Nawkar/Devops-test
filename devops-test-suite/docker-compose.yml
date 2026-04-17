@@ -3,7 +3,7 @@ version: "3.9"
 # ── DevOps Test Suite — Production Docker Compose ─────────────────────────────
 #
 #  Services:
-#    backend   — Node.js 20 Express API on port 81 with all scanner CLIs installed
+#    backend   — Node.js 20 Express API on port 8081 with all scanner CLIs installed
 #    frontend  — Vite-built React app served by nginx on port 80
 #
 #  Volumes:
@@ -31,18 +31,18 @@ services:
 
     environment:
       - NODE_ENV=production
-      - PORT=81
+      - PORT=8081
       - HOST=0.0.0.0
 
     ports:
-      - "81:81"                 # expose backend directly (useful for debugging / direct API calls)
+      - "8081:8081"             # expose backend directly (useful for debugging / direct API calls)
 
     volumes:
       - uploads:/app/uploads
       - scan_history:/app/scan-history-data
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:81/api/ping"]
+      test: ["CMD", "curl", "-f", "http://localhost:8081/api/ping"]
       interval: 30s
       timeout: 10s
       retries: 3

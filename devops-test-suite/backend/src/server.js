@@ -14,7 +14,7 @@ const scanRouter = require('./routes/scan')
 
 // ── App setup ─────────────────────────────────────────────────────────────────
 const app  = express()
-const PORT = parseInt(process.env.PORT) || 81
+const PORT = parseInt(process.env.PORT) || 8081
 const HOST = process.env.HOST || '0.0.0.0'
 
 // ── CORS configuration ────────────────────────────────────────────────────────
@@ -22,8 +22,7 @@ const HOST = process.env.HOST || '0.0.0.0'
 // You can add more origins to the array below (e.g. your home IP).
 const allowedOrigins = [
   process.env.CORS_ORIGIN,         // http://20.12.224.28 (from .env)
-  'http://localhost:80',           // local dev
-  'http://localhost:3000',         // fallback dev port
+  'http://localhost:80',           // local dev (frontend port)
   'http://127.0.0.1:80',
 ].filter(Boolean)  // remove undefined/empty entries
 

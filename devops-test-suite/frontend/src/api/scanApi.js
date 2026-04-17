@@ -4,7 +4,7 @@
 
 import axios from 'axios'
 
-// All calls go to /api/... — Vite proxies this to http://localhost:81 automatically.
+// All calls go to /api/... — Vite proxies this to http://localhost:8081 automatically.
 // You never need to hardcode the backend port or IP in React code.
 const BASE = '/api'
 

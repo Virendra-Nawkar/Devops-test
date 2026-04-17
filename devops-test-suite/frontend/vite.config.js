@@ -9,18 +9,18 @@ export default defineConfig({
   plugins: [react()],
 
   server: {
-    // Frontend runs on port 80 (as required by PORT RULES)
+    // Frontend runs on port 80
     port: 80,
 
     // host: '0.0.0.0' means the dev server accepts connections from outside localhost
-    // This is required so you can open http://20.12.224.28:80 from your Windows browser
+    // This is required so you can open http://VM_IP:80 from your browser
     host: '0.0.0.0',
 
     // Proxy: any request from React starting with /api is automatically forwarded
-    // to the backend on port 81. React code never needs to hardcode the backend IP.
+    // to the backend on port 8081. React code never needs to hardcode the backend IP.
     proxy: {
       '/api': {
-        target: 'http://localhost:81',
+        target: 'http://localhost:8081',
         changeOrigin: true,
       },
     },
