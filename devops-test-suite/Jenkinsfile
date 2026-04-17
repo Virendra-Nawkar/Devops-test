@@ -46,14 +46,16 @@ pipeline {
 
         stage('Deploy to AKS') {
             steps {
-                sh "kubectl apply -f ${K8S_DIR}/namespace.yaml"
-                sh "kubectl apply -f ${K8S_DIR}/backend-deployment.yaml"
-                sh "kubectl apply -f ${K8S_DIR}/frontend-deployment.yaml"
-                sh "kubectl apply -f ${K8S_DIR}/hpa.yaml"
-                sh "kubectl apply -f ${K8S_DIR}/ingress.yaml"
-                sh "kubectl rollout status deployment/backend -n devops-dashboard"
-                sh "kubectl rollout status deployment/frontend -n devops-dashboard"
-            }
+                    sh "kubectl apply -f ${K8S_DIR}/namespace.yaml"
+                    sh "kubectl apply -f ${K8S_DIR}/backend-deployment.yaml"
+                    sh "kubectl apply -f ${K8S_DIR}/frontend-deployment.yaml"
+                    sh "kubectl apply -f ${K8S_DIR}/hpa.yaml"
+                    sh "kubectl apply -f ${K8S_DIR}/ingress.yaml"
+                    sh "kubectl rollout restart deployment/frontend -n devops-dashboard"   // ← ADD THIS
+                    sh "kubectl rollout restart deployment/backend -n devops-dashboard"    // ← ADD THIS
+                    sh "kubectl rollout status deployment/backend -n devops-dashboard"
+                    sh "kubectl rollout status deployment/frontend -n devops-dashboard"
+                }
         }
 
     }
