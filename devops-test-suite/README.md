@@ -578,57 +578,132 @@ Rebuild: `docker compose up --build -d`
 
 ## 12. Troubleshooting
 
+### Ports used by this project
+
+This project uses **only two ports**. Make sure both are open in your VM's firewall / NSG rules:
+
+| Port | Service | Who uses it |
+|------|---------|-------------|
+| **80** | Frontend (React / nginx) | Your browser opens this |
+| **81** | Backend (Express API) | Frontend talks to this internally |
+
+> **Azure / cloud VMs:** add inbound rules for port **80** and **81** in your Network Security Group (NSG). No other ports are needed.
+
+---
+
 ### Port permission denied (Error: EACCES port 80 or 81)
+
+Linux blocks non-root processes from binding to ports below 1024 by default.
+
 ```bash
+# Fix immediately
 sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80
+
+# Make permanent — survives reboots
 echo "net.ipv4.ip_unprivileged_port_start=80" | sudo tee -a /etc/sysctl.conf
 ```
 
+---
+
 ### Port already in use
+
 ```bash
-kill $(lsof -t -i:81)   # kill backend
-kill $(lsof -t -i:80)   # kill frontend
+sudo fuser -k 80/tcp    # kill whatever is on port 80
+sudo fuser -k 81/tcp    # kill whatever is on port 81
+
+# Alternative if fuser is not available:
+kill $(lsof -t -i:80) 2>/dev/null || true
+kill $(lsof -t -i:81) 2>/dev/null || true
 ```
 
+---
+
+### Checkov not found / "ensurepip is not available" error
+
+This happens on **Ubuntu 22.04+ / Debian 12+** with Python 3.12 because the `python3-venv` package alone is not enough — you also need the version-specific package:
+
+```bash
+# Install the correct venv package for Python 3.12
+sudo apt-get install -y python3.12-venv python3-full
+
+# Then re-run the installer
+sudo bash install-tools.sh
+```
+
+**What the script does** (you don't need to do this manually):
+- Creates a virtual environment at `/opt/checkov-venv`
+- Installs Checkov inside it
+- Symlinks `/usr/local/bin/checkov → /opt/checkov-venv/bin/checkov` so it works everywhere
+
+**Why this is needed:** Python 3.12 enforces PEP 668, which blocks `pip install` to the system Python to prevent breaking OS packages. The venv approach is the correct permanent solution.
+
+---
+
 ### CORS error in browser console
+
 ```
 Access to XMLHttpRequest blocked by CORS policy
 ```
-Fix: Update `VM_IP` in `backend/.env` to match your current VM IP, then restart.
 
-### Scanner shows `TOOL_MISSING`
+Fix: Update `VM_IP` and `CORS_ORIGIN` in `backend/.env` to match your current VM's public IP, then restart the backend.
+
 ```bash
-# See which tools are missing
-curl http://localhost:81/api/scan/health
-
-# Reinstall
-sudo bash install-tools.sh
-
-# Checkov specifically — add pip to PATH
-export PATH=$PATH:$HOME/.local/bin
-echo 'export PATH=$PATH:$HOME/.local/bin' >> ~/.bashrc
+nano backend/.env
+# Change: VM_IP=YOUR_NEW_IP
+# Change: CORS_ORIGIN=http://YOUR_NEW_IP
 ```
 
+---
+
+### Scanner shows `TOOL_MISSING`
+
+```bash
+# Check which tools are missing
+curl http://localhost:81/api/scan/health | python3 -m json.tool
+
+# Re-run the installer (safe to run multiple times — skips already-installed tools)
+sudo bash install-tools.sh
+```
+
+If only Checkov is missing, see the **"Checkov not found"** section above.
+
+---
+
 ### npm: command not found
+
 ```bash
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt-get install -y nodejs
+node -v && npm -v
 ```
 
+---
+
 ### Docker build fails
+
 ```bash
-# Clear Docker build cache and rebuild
+# Clear the build cache and try again
 docker compose build --no-cache
 docker compose up -d
 ```
 
+If it fails on the Checkov/pip step inside Docker, the `backend/Dockerfile` already uses a venv — this should not happen unless the network is blocking PyPI. Try again; it's usually a transient network issue.
+
+---
+
 ### Frontend shows blank page or cannot connect
-1. Make sure the backend is running and healthy: `curl http://localhost:81/api/ping`
-2. Check CORS: your browser URL must match the `CORS_ORIGIN` in backend `.env`
-3. In Docker mode: check `docker compose ps` and `docker compose logs backend`
+
+1. Check the backend is alive: `curl http://localhost:81/api/ping`
+2. Check your browser URL uses the VM's IP, not `localhost` (unless you're on the VM itself)
+3. In Docker mode: `docker compose ps` — both containers should show `healthy`
+4. Check logs: `docker compose logs backend` or `docker compose logs frontend`
+
+---
 
 ### Trivy scan is very slow (first time)
-Trivy downloads its vulnerability database on first run (~100 MB). This is cached for subsequent runs. Normal wait: 2–5 minutes first time, a few seconds after.
+
+Trivy downloads its vulnerability database on first run (~100 MB). This is cached for subsequent runs.
+Normal wait: **2–5 minutes** first time, a few seconds after that.
 
 ---
 

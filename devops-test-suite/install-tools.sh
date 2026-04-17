@@ -165,11 +165,12 @@ else
   if [ "$PLATFORM" = "linux" ]; then
 
     # ── Ensure python3-venv is present ──────────────────────────────────────
+    # On Debian/Ubuntu the venv module requires the version-specific package
+    # (e.g. python3.12-venv) — installing just python3-venv is not enough.
     info "Ensuring python3-venv is installed..."
-    if ! python3 -m venv --help &>/dev/null; then
-      apt-get install -y python3-venv python3-full 2>/dev/null || \
-      yum install -y python3-venv 2>/dev/null || true
-    fi
+    PY_VER=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || echo "3")
+    apt-get install -y "python${PY_VER}-venv" python3-venv python3-full 2>/dev/null || \
+    yum install -y python3-venv 2>/dev/null || true
 
     # ── Method 1: pipx (cleanest, works on any distro) ──────────────────────
     if has_cmd pipx; then
