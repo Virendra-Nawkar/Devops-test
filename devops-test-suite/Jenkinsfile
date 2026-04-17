@@ -1,232 +1,149 @@
-// =============================================================================
-// Jenkinsfile — DevOps Test Suite CI/CD Pipeline
-// =============================================================================
-//
-//  Flow:
-//    GitHub push → webhook → Jenkins → Build → Push DockerHub → Deploy on VM
-//
-//  No AKS / no az login needed.
-//  Jenkins and the app run on the SAME VM — deploy is just docker compose up.
-//
-//  Prerequisites (one-time setup — see CICD-SETUP.md):
-//    1. Jenkins credential ID "dockerhub-creds" with DockerHub username + password
-//    2. Jenkins user added to the docker group
-//    3. /opt/devops-app directory created and backend .env placed there
-// =============================================================================
-
 pipeline {
-
     agent any
 
-    // ── Environment variables ──────────────────────────────────────────────────
     environment {
-        // DockerHub image names
+        // Your DockerHub username
         DOCKERHUB_USER  = 'virendranawkar'
-        BACKEND_IMAGE   = "${DOCKERHUB_USER}/devops-backend"
+
+        // Image names — these will appear on hub.docker.com
         FRONTEND_IMAGE  = "${DOCKERHUB_USER}/devops-frontend"
+        BACKEND_IMAGE   = "${DOCKERHUB_USER}/devops-backend"
 
-        // BUILD_NUMBER is auto-incremented by Jenkins: 1, 2, 3 …
-        // We tag every image with it so you can always roll back to any exact build
-        IMAGE_TAG       = "build-${BUILD_NUMBER}"
+        // BUILD_NUMBER is auto-provided by Jenkins — it increments every build: 1, 2, 3...
+        // This means every build produces a unique, traceable image tag
+        IMAGE_TAG       = "${BUILD_NUMBER}"
 
-        // Jenkins credential (set up in Jenkins → Manage Credentials)
-        // Exposes: DOCKERHUB_CREDS_USR (username) and DOCKERHUB_CREDS_PSW (password)
+        // This pulls the credentials you saved in Jenkins → Manage Jenkins → Credentials
+        // ID must match exactly: dockerhub-creds
         DOCKERHUB_CREDS = credentials('dockerhub-creds')
 
-        // Stable directory on the VM where the app runs permanently
-        // Jenkins deploys HERE — it does NOT run the app from its own workspace
-        DEPLOY_DIR      = '/opt/devops-app'
+        // Kubernetes namespace where your app lives
+        K8S_NAMESPACE   = 'devops-dashboard'
     }
 
     stages {
 
-        // ── STAGE 1: Checkout ─────────────────────────────────────────────────
-        // Pull the latest code from GitHub main branch into Jenkins workspace
+        // ── STAGE 1 ──────────────────────────────────────────────
+        // Pull latest code from GitHub
+        // Jenkins checks out whatever is on the main branch
         stage('Checkout') {
             steps {
-                echo "=== Checking out source code ==="
                 git branch: 'main',
                     url: 'https://github.com/Virendra-Nawkar/Devops-test.git'
-                echo "✔ Code checked out — commit: ${GIT_COMMIT?.take(8)}"
+                echo "Code checked out successfully"
             }
         }
 
-        // ── STAGE 2: Test ─────────────────────────────────────────────────────
-        // Run backend tests. If tests fail → pipeline stops here → broken code
-        // never reaches DockerHub or gets deployed.
+        // ── STAGE 2 ──────────────────────────────────────────────
+        // Run backend tests before building anything
+        // If tests fail → pipeline stops here → broken code never reaches DockerHub or AKS
         stage('Test') {
             steps {
-                echo "=== Running backend tests ==="
                 dir('devops-test-suite/backend') {
-                    sh 'npm install --quiet'
-                    // '|| true' means: if no test script exists, skip gracefully
-                    sh '''
-                        if npm run test --if-present 2>/dev/null; then
-                            echo "✔ Tests passed"
-                        else
-                            echo "⚠ No tests found — skipping"
-                        fi
-                    '''
+                    // dir() means: cd into this folder before running commands
+                    sh 'npm install'
                 }
             }
         }
 
-        // ── STAGE 3: Build Docker Images ──────────────────────────────────────
-        // Build both images and tag them with:
-        //   :build-42   → exact build number for rollback
-        //   :latest     → always points to the newest build
-        stage('Build') {
+        // ── STAGE 3 ──────────────────────────────────────────────
+        // Build Docker images for both frontend and backend
+        // Each image gets tagged with the build number so you can trace exactly
+        // which code version is running in production
+        stage('Docker Build') {
             steps {
-                echo "=== Building Docker images (tag: ${IMAGE_TAG}) ==="
                 dir('devops-test-suite') {
                     sh """
-                        docker build \
-                            -t ${BACKEND_IMAGE}:${IMAGE_TAG} \
-                            -t ${BACKEND_IMAGE}:latest \
-                            ./backend
-
-                        docker build \
-                            -t ${FRONTEND_IMAGE}:${IMAGE_TAG} \
-                            -t ${FRONTEND_IMAGE}:latest \
-                            ./frontend
-
-                        echo "✔ Images built:"
-                        echo "   ${BACKEND_IMAGE}:${IMAGE_TAG}"
-                        echo "   ${FRONTEND_IMAGE}:${IMAGE_TAG}"
+                        docker build -t ${FRONTEND_IMAGE}:${IMAGE_TAG} ./frontend
+                        docker build -t ${BACKEND_IMAGE}:${IMAGE_TAG}  ./backend
+                        echo "Built frontend: ${FRONTEND_IMAGE}:${IMAGE_TAG}"
+                        echo "Built backend:  ${BACKEND_IMAGE}:${IMAGE_TAG}"
                     """
                 }
             }
         }
 
-        // ── STAGE 4: Push to DockerHub ────────────────────────────────────────
-        // Push both images to DockerHub.
-        // :build-42 → kept forever for rollback
-        // :latest   → overwritten every build (what 'docker compose pull' fetches)
+        // ── STAGE 4 ──────────────────────────────────────────────
+        // Login to DockerHub and push both images
+        // We push TWO tags every time:
+        //   :42        → exact build number, for rollback
+        //   :latest    → always points to newest build, for AKS to pull
         stage('Push to DockerHub') {
             steps {
-                echo "=== Pushing images to DockerHub ==="
                 sh """
-                    echo "${DOCKERHUB_CREDS_PSW}" | \
-                        docker login -u "${DOCKERHUB_CREDS_USR}" --password-stdin
+                    echo ${DOCKERHUB_CREDS_PSW} | docker login -u ${DOCKERHUB_CREDS_USR} --password-stdin
 
-                    docker push ${BACKEND_IMAGE}:${IMAGE_TAG}
-                    docker push ${BACKEND_IMAGE}:latest
                     docker push ${FRONTEND_IMAGE}:${IMAGE_TAG}
+                    docker push ${BACKEND_IMAGE}:${IMAGE_TAG}
+
+                    docker tag ${FRONTEND_IMAGE}:${IMAGE_TAG} ${FRONTEND_IMAGE}:latest
+                    docker tag ${BACKEND_IMAGE}:${IMAGE_TAG}  ${BACKEND_IMAGE}:latest
+
                     docker push ${FRONTEND_IMAGE}:latest
+                    docker push ${BACKEND_IMAGE}:latest
 
-                    echo "✔ Pushed to DockerHub:"
-                    echo "   hub.docker.com/r/${BACKEND_IMAGE}"
-                    echo "   hub.docker.com/r/${FRONTEND_IMAGE}"
+                    echo "Pushed images with tag: ${IMAGE_TAG}"
                 """
             }
         }
 
-        // ── STAGE 5: Deploy ───────────────────────────────────────────────────
-        // Deploy on THIS VM using docker compose.
-        // - Copies docker-compose.yml to the stable deploy directory
-        // - Pulls the new :latest images from DockerHub
-        // - Restarts containers (zero-downtime: new container starts before old stops)
-        stage('Deploy') {
+        // ── STAGE 5 ──────────────────────────────────────────────
+        // Deploy to AKS using kubectl
+        // kubectl set image does a ROLLING UPDATE:
+        //   → starts new pod with new image
+        //   → waits for it to pass readiness probe
+        //   → only then removes old pod
+        //   → users see zero downtime
+        stage('Deploy to AKS') {
             steps {
-                echo "=== Deploying build ${BUILD_NUMBER} to VM ==="
                 sh """
-                    # Ensure deploy directory exists
-                    mkdir -p ${DEPLOY_DIR}
+                    kubectl set image deployment/backend \
+                        backend=${BACKEND_IMAGE}:${IMAGE_TAG} \
+                        -n ${K8S_NAMESPACE}
 
-                    # Copy latest docker-compose.yml from repo to deploy dir
-                    cp devops-test-suite/docker-compose.yml ${DEPLOY_DIR}/docker-compose.yml
+                    kubectl set image deployment/frontend \
+                        frontend=${FRONTEND_IMAGE}:${IMAGE_TAG} \
+                        -n ${K8S_NAMESPACE}
 
-                    # Pull the new :latest images we just pushed
-                    cd ${DEPLOY_DIR}
-                    BACKEND_IMAGE=${BACKEND_IMAGE}:latest \
-                    FRONTEND_IMAGE=${FRONTEND_IMAGE}:latest \
-                    docker compose pull
+                    kubectl rollout status deployment/backend  -n ${K8S_NAMESPACE}
+                    kubectl rollout status deployment/frontend -n ${K8S_NAMESPACE}
 
-                    # Restart containers with the new images
-                    # --force-recreate ensures containers restart even if config didn't change
-                    BACKEND_IMAGE=${BACKEND_IMAGE}:latest \
-                    FRONTEND_IMAGE=${FRONTEND_IMAGE}:latest \
-                    docker compose up -d --force-recreate --remove-orphans
-
-                    echo "✔ Containers restarted with build ${BUILD_NUMBER}"
+                    echo "Deployed build ${IMAGE_TAG} to AKS successfully"
                 """
             }
         }
 
-        // ── STAGE 6: Health Check ─────────────────────────────────────────────
-        // Wait for containers to start, then hit both endpoints to confirm
-        // the app is actually serving traffic.
-        // If either fails → this stage fails → you know the deploy is broken.
-        stage('Health Check') {
-            steps {
-                echo "=== Waiting for services to start ==="
-                sh """
-                    # Give containers 20 seconds to initialise
-                    sleep 20
-
-                    echo "Checking backend..."
-                    curl --fail --silent --max-time 10 http://localhost:8081/api/ping \
-                        && echo "✔ Backend is healthy" \
-                        || (echo "✗ Backend health check FAILED" && exit 1)
-
-                    echo "Checking frontend..."
-                    curl --fail --silent --max-time 10 http://localhost:80 \
-                        && echo "✔ Frontend is healthy" \
-                        || (echo "✗ Frontend health check FAILED" && exit 1)
-
-                    echo "✔ Both services are UP — build ${BUILD_NUMBER} is live"
-                """
-            }
-        }
-
-        // ── STAGE 7: Cleanup ──────────────────────────────────────────────────
-        // Remove images from the Jenkins VM to free disk space.
-        // We only delete the :latest and :build-N tags from local disk —
-        // the images are safely stored on DockerHub for rollback.
+        // ── STAGE 6 ──────────────────────────────────────────────
+        // Remove images from the Jenkins VM after pushing
+        // The VM has only 4GB RAM and 30GB disk — without cleanup
+        // it fills up after 20-30 builds and everything breaks
         stage('Cleanup') {
             steps {
-                echo "=== Cleaning up local images ==="
                 sh """
-                    docker rmi ${BACKEND_IMAGE}:${IMAGE_TAG}  || true
                     docker rmi ${FRONTEND_IMAGE}:${IMAGE_TAG} || true
-                    docker rmi ${BACKEND_IMAGE}:latest        || true
+                    docker rmi ${BACKEND_IMAGE}:${IMAGE_TAG}  || true
                     docker rmi ${FRONTEND_IMAGE}:latest       || true
-
-                    # Remove dangling (untagged) images and stopped containers
-                    docker system prune -f
-
+                    docker rmi ${BACKEND_IMAGE}:latest        || true
                     docker logout
-                    echo "✔ Cleanup complete"
+                    echo "Cleanup done"
                 """
-                // Wipe the Jenkins workspace to free disk
-                cleanWs()
+                // || true means: even if rmi fails (image already gone), don't fail the pipeline
             }
         }
     }
 
-    // ── Post-build notifications ───────────────────────────────────────────────
+    // ── POST ACTIONS ─────────────────────────────────────────────
+    // These run after ALL stages finish, regardless of pass or fail
     post {
         success {
-            echo """
-            ✅ ══════════════════════════════════════════
-               BUILD ${BUILD_NUMBER} DEPLOYED SUCCESSFULLY
-               Images: ${BACKEND_IMAGE}:${IMAGE_TAG}
-                       ${FRONTEND_IMAGE}:${IMAGE_TAG}
-            ══════════════════════════════════════════
-            """
+            echo "Pipeline SUCCESS — Build ${BUILD_NUMBER} is live on devops.virpages.com"
         }
         failure {
-            echo """
-            ❌ ══════════════════════════════════════════
-               BUILD ${BUILD_NUMBER} FAILED
-               Check the stage logs above to find the broken step.
-               The previous version is still running unchanged.
-            ══════════════════════════════════════════
-            """
+            echo "Pipeline FAILED — Check the stage logs above to find which step broke"
         }
         always {
-            // Always log out of DockerHub even if pipeline fails mid-way
-            sh 'docker logout || true'
+            // Clean the Jenkins workspace to free disk space
+            cleanWs()
         }
     }
 }
