@@ -7,6 +7,7 @@
 # Run as:  root (Linux) or normal user (Mac with Homebrew)
 # =============================================================================
 
+
 # -e: exit on error (errors inside if-blocks are still caught)
 # -o pipefail: catch errors in piped commands
 # Note: intentionally NOT using -u (unbound variable check) because some
