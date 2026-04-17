@@ -2,148 +2,68 @@ pipeline {
     agent any
 
     environment {
-        // Your DockerHub username
-        DOCKERHUB_USER  = 'virendranawkar'
-
-        // Image names — these will appear on hub.docker.com
-        FRONTEND_IMAGE  = "${DOCKERHUB_USER}/devops-frontend"
-        BACKEND_IMAGE   = "${DOCKERHUB_USER}/devops-backend"
-
-        // BUILD_NUMBER is auto-provided by Jenkins — it increments every build: 1, 2, 3...
-        // This means every build produces a unique, traceable image tag
-        IMAGE_TAG       = "${BUILD_NUMBER}"
-
-        // This pulls the credentials you saved in Jenkins → Manage Jenkins → Credentials
-        // ID must match exactly: dockerhub-creds
-        DOCKERHUB_CREDS = credentials('dockerhub-creds')
-
-        // Kubernetes namespace where your app lives
-        K8S_NAMESPACE   = 'devops-dashboard'
+        DOCKERHUB_USER = 'virendranawkar'
+        FRONTEND_IMAGE = "${DOCKERHUB_USER}/devops-frontend"
+        BACKEND_IMAGE  = "${DOCKERHUB_USER}/devops-backend"
+        K8S_DIR        = 'devops-test-suite/k8s'
     }
 
     stages {
 
-        // ── STAGE 1 ──────────────────────────────────────────────
-        // Pull latest code from GitHub
-        // Jenkins checks out whatever is on the main branch
         stage('Checkout') {
             steps {
-                git branch: 'main',
-                    url: 'https://github.com/Virendra-Nawkar/Devops-test.git'
-                echo "Code checked out successfully"
+                checkout scm
             }
         }
 
-        // ── STAGE 2 ──────────────────────────────────────────────
-        // Run backend tests before building anything
-        // If tests fail → pipeline stops here → broken code never reaches DockerHub or AKS
-        stage('Test') {
+        stage('Build Frontend Image') {
+            steps {
+                dir('devops-test-suite/frontend') {
+                    sh "docker build -t ${FRONTEND_IMAGE}:${BUILD_NUMBER} -t ${FRONTEND_IMAGE}:latest ."
+                }
+            }
+        }
+
+        stage('Build Backend Image') {
             steps {
                 dir('devops-test-suite/backend') {
-                    // dir() means: cd into this folder before running commands
-                    sh 'npm install'
+                    sh "docker build -t ${BACKEND_IMAGE}:${BUILD_NUMBER} -t ${BACKEND_IMAGE}:latest ."
                 }
             }
         }
 
-        // ── STAGE 3 ──────────────────────────────────────────────
-        // Build Docker images for both frontend and backend
-        // Each image gets tagged with the build number so you can trace exactly
-        // which code version is running in production
-        stage('Docker Build') {
-            steps {
-                dir('devops-test-suite') {
-                    sh """
-                        docker build -t ${FRONTEND_IMAGE}:${IMAGE_TAG} ./frontend
-                        docker build -t ${BACKEND_IMAGE}:${IMAGE_TAG}  ./backend
-                        echo "Built frontend: ${FRONTEND_IMAGE}:${IMAGE_TAG}"
-                        echo "Built backend:  ${BACKEND_IMAGE}:${IMAGE_TAG}"
-                    """
-                }
-            }
-        }
-
-        // ── STAGE 4 ──────────────────────────────────────────────
-        // Login to DockerHub and push both images
-        // We push TWO tags every time:
-        //   :42        → exact build number, for rollback
-        //   :latest    → always points to newest build, for AKS to pull
         stage('Push to DockerHub') {
             steps {
-                sh """
-                    echo ${DOCKERHUB_CREDS_PSW} | docker login -u ${DOCKERHUB_CREDS_USR} --password-stdin
-
-                    docker push ${FRONTEND_IMAGE}:${IMAGE_TAG}
-                    docker push ${BACKEND_IMAGE}:${IMAGE_TAG}
-
-                    docker tag ${FRONTEND_IMAGE}:${IMAGE_TAG} ${FRONTEND_IMAGE}:latest
-                    docker tag ${BACKEND_IMAGE}:${IMAGE_TAG}  ${BACKEND_IMAGE}:latest
-
-                    docker push ${FRONTEND_IMAGE}:latest
-                    docker push ${BACKEND_IMAGE}:latest
-
-                    echo "Pushed images with tag: ${IMAGE_TAG}"
-                """
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh "echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin"
+                    sh "docker push ${FRONTEND_IMAGE}:${BUILD_NUMBER}"
+                    sh "docker push ${FRONTEND_IMAGE}:latest"
+                    sh "docker push ${BACKEND_IMAGE}:${BUILD_NUMBER}"
+                    sh "docker push ${BACKEND_IMAGE}:latest"
+                }
             }
         }
 
-        // ── STAGE 5 ──────────────────────────────────────────────
-        // Deploy to AKS using kubectl
-        // kubectl set image does a ROLLING UPDATE:
-        //   → starts new pod with new image
-        //   → waits for it to pass readiness probe
-        //   → only then removes old pod
-        //   → users see zero downtime
         stage('Deploy to AKS') {
             steps {
-                sh """
-                    kubectl set image deployment/backend \
-                        backend=${BACKEND_IMAGE}:${IMAGE_TAG} \
-                        -n ${K8S_NAMESPACE}
-
-                    kubectl set image deployment/frontend \
-                        frontend=${FRONTEND_IMAGE}:${IMAGE_TAG} \
-                        -n ${K8S_NAMESPACE}
-
-                    kubectl rollout status deployment/backend  -n ${K8S_NAMESPACE}
-                    kubectl rollout status deployment/frontend -n ${K8S_NAMESPACE}
-
-                    echo "Deployed build ${IMAGE_TAG} to AKS successfully"
-                """
+                sh "kubectl apply -f ${K8S_DIR}/namespace.yaml"
+                sh "kubectl apply -f ${K8S_DIR}/backend-deployment.yaml"
+                sh "kubectl apply -f ${K8S_DIR}/frontend-deployment.yaml"
+                sh "kubectl apply -f ${K8S_DIR}/hpa.yaml"
+                sh "kubectl apply -f ${K8S_DIR}/ingress.yaml"
+                sh "kubectl rollout status deployment/backend -n devops-dashboard"
+                sh "kubectl rollout status deployment/frontend -n devops-dashboard"
             }
         }
 
-        // ── STAGE 6 ──────────────────────────────────────────────
-        // Remove images from the Jenkins VM after pushing
-        // The VM has only 4GB RAM and 30GB disk — without cleanup
-        // it fills up after 20-30 builds and everything breaks
-        stage('Cleanup') {
-            steps {
-                sh """
-                    docker rmi ${FRONTEND_IMAGE}:${IMAGE_TAG} || true
-                    docker rmi ${BACKEND_IMAGE}:${IMAGE_TAG}  || true
-                    docker rmi ${FRONTEND_IMAGE}:latest       || true
-                    docker rmi ${BACKEND_IMAGE}:latest        || true
-                    docker logout
-                    echo "Cleanup done"
-                """
-                // || true means: even if rmi fails (image already gone), don't fail the pipeline
-            }
-        }
     }
 
-    // ── POST ACTIONS ─────────────────────────────────────────────
-    // These run after ALL stages finish, regardless of pass or fail
     post {
         success {
-            echo "Pipeline SUCCESS — Build ${BUILD_NUMBER} is live on devops.virpages.com"
+            echo '✅ Pipeline SUCCESS — App deployed to AKS!'
         }
         failure {
-            echo "Pipeline FAILED — Check the stage logs above to find which step broke"
-        }
-        always {
-            // Clean the Jenkins workspace to free disk space
-            cleanWs()
+            echo '❌ Pipeline FAILED — Check logs above!'
         }
     }
 }
