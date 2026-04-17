@@ -16,6 +16,7 @@ spec:
       containers:
       - name: backend
         image: virendranawkar/devops-backend:latest
+        imagePullPolicy: Always
         ports:
         - containerPort: 3000
         env:
@@ -23,6 +24,10 @@ spec:
           value: "3000"
         - name: NODE_ENV
           value: "production"
+        - name: CORS_ORIGIN
+          value: "https://devops.virpages.com"
+        - name: VM_IP
+          value: "135.119.25.39"
         resources:
           requests:
             cpu: "500m"
