@@ -7,7 +7,7 @@ This guide explains the exact workflow for developing on Windows and running on 
 ## How It Works
 
 ```
-Your Windows PC (VS Code)
+Your Windows PC (VS Code)d
         │
         │  git push
         ▼
