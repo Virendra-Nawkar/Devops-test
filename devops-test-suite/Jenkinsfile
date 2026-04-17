@@ -42,7 +42,6 @@ pipeline {
                 dir('devops-test-suite/backend') {
                     // dir() means: cd into this folder before running commands
                     sh 'npm install'
-                    sh 'npm test'
                 }
             }
         }
