@@ -86,13 +86,26 @@ Every finding expands to show:
 
 ## 3. Prerequisites
 
+> **Starting from a brand-new Linux VM?** Run the commands in this section top to bottom — they cover everything you need. Takes about 5 minutes.
+
+---
+
 ### For Direct / Dev Mode (no Docker)
 
-Install these on your **Linux VM or Mac**:
-
-#### Node.js 20+
+#### Step A — System utilities (always run this first)
 ```bash
-# Ubuntu / Debian
+sudo apt-get update
+sudo apt-get install -y curl wget git ca-certificates gnupg lsb-release \
+    python3 python3-pip python3-venv python3-full
+```
+
+> **Why `python3-venv` and `python3-full`?** Ubuntu 22.04+ and Debian 12+ block system-wide `pip install` (PEP 668). The install script uses a dedicated virtual environment automatically — no manual steps needed.
+
+---
+
+#### Step B — Node.js 20
+```bash
+# Add the NodeSource repo for Node 20
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
@@ -101,54 +114,74 @@ node -v    # should show v20.x.x
 npm -v     # should show 10.x.x
 ```
 
-#### Python 3 + pip3 (required for Checkov)
-```bash
-# Ubuntu / Debian
-sudo apt-get install -y python3 python3-pip
+---
 
-# Verify
-python3 --version   # 3.8+
-pip3 --version
-```
+#### Step C — Fix port permissions (Linux only)
 
-#### System utilities
-```bash
-sudo apt-get install -y curl wget git ca-certificates
-```
+By default Linux blocks non-root programs from using ports below 1024. Ports 80 and 81 both need this fix:
 
-#### Fix port permissions (Linux only — ports 80 and 81)
 ```bash
-# Allow non-root processes to bind to ports 80+
+# Apply immediately
 sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80
 
-# Make permanent (survives reboot)
+# Make permanent — survives reboots
 echo "net.ipv4.ip_unprivileged_port_start=80" | sudo tee -a /etc/sysctl.conf
 ```
 
-#### Scanner tools (installed via the included script)
+---
+
+#### Step D — Install all 6 scanner tools (one command)
 ```bash
 sudo bash install-tools.sh
 ```
-Installs: **Hadolint**, **Trivy**, **tfsec**, **Checkov**, **Kubeconform**, **Polaris**
+
+What this installs and how:
+
+| Tool | Method | Scans |
+|------|--------|-------|
+| **Hadolint** | Binary download | Dockerfile linting |
+| **Trivy** | Binary download | CVEs in containers |
+| **tfsec** | Binary download | Terraform security |
+| **Checkov** | Python venv at `/opt/checkov-venv` | Terraform + K8s compliance |
+| **Kubeconform** | Binary download | K8s schema validation |
+| **Polaris** | Binary download | K8s best practices |
+
+> **Checkov note:** On Ubuntu 22.04 / Debian 12 or newer, `pip install` is blocked system-wide (PEP 668 rule). The script automatically creates a virtual environment at `/opt/checkov-venv` and symlinks the binary to `/usr/local/bin/checkov`. No manual steps required.
+
+Expected final output:
+```
+  ✔ hadolint: Haskell Dockerfile Linter 2.x.x
+  ✔ trivy: Version: 0.x.x
+  ✔ tfsec: v1.x.x
+  ✔ checkov: 3.x.x
+  ✔ kubeconform: v0.x.x
+  ✔ polaris: Polaris version:x.x.x
+
+  All 6 scanner tools installed successfully!
+```
 
 ---
 
 ### For Docker / Production Mode
 
-Only two things needed:
+Only two things needed on the host — all scanner tools are baked into the container image:
 
 ```bash
-# Docker Engine
+# Install Docker Engine (official one-liner)
 curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER   # then log out and back in
 
-# Docker Compose plugin
-sudo apt-get install -y docker-compose-plugin
+# Add your user to the docker group (so you don't need sudo)
+sudo usermod -aG docker $USER
 
-# Verify
-docker --version
-docker compose version
+# Log out and back in, then verify
+docker --version          # Docker 24.x or newer
+docker compose version    # v2.x or newer
 ```
+
+> **If `docker compose version` fails**, install the plugin manually:
+> ```bash
+> sudo apt-get install -y docker-compose-plugin
+> ```
 
 ---
 
@@ -164,6 +197,10 @@ cd Devops-test/devops-test-suite
 
 ### Step 2 — Set your VM IP
 ```bash
+# Find your VM's public IP
+hostname -I | awk '{print $1}'
+
+# Edit the backend config
 nano backend/.env
 ```
 Change these two lines to match your VM's IP:
@@ -172,15 +209,16 @@ VM_IP=YOUR_VM_IP
 CORS_ORIGIN=http://YOUR_VM_IP
 ```
 
-### Step 3 — Install scanner tools (one-time)
+### Step 3 — Install scanner tools
 ```bash
 sudo bash install-tools.sh
 ```
+This is a one-time step. Re-running it is safe — already-installed tools are skipped.
 
-### Step 4 — Add Checkov to PATH
+### Step 4 — Fix port permissions (if not already done)
 ```bash
-echo 'export PATH=$PATH:$HOME/.local/bin' >> ~/.bashrc
-source ~/.bashrc
+sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80
+echo "net.ipv4.ip_unprivileged_port_start=80" | sudo tee -a /etc/sysctl.conf
 ```
 
 ### Step 5 — Start the backend (Terminal 1)

@@ -7,7 +7,11 @@
 # Run as:  root (Linux) or normal user (Mac with Homebrew)
 # =============================================================================
 
-set -euo pipefail
+# -e: exit on error (errors inside if-blocks are still caught)
+# -o pipefail: catch errors in piped commands
+# Note: intentionally NOT using -u (unbound variable check) because some
+# systems initialise arrays differently and it causes false positives.
+set -eo pipefail
 
 # ── Colour helpers ────────────────────────────────────────────────────────────
 GREEN='\033[0;32m'
@@ -151,33 +155,61 @@ fi
 # =============================================================================
 step "Installing Checkov (Terraform/K8s compliance scanner)"
 
+CHECKOV_VENV="/opt/checkov-venv"
+CHECKOV_BIN="/usr/local/bin/checkov"
+
 if has_cmd checkov; then
   ok "checkov already installed: $(checkov --version 2>&1 | head -1)"
   INSTALLED+=("checkov")
 else
-  info "Installing Checkov via pip3..."
-  # Check pip3 is available
-  if ! has_cmd pip3; then
-    warn "pip3 not found — trying to install python3-pip..."
-    if [ "$PLATFORM" = "linux" ]; then
-      apt-get install -y python3-pip 2>/dev/null || \
-      yum install -y python3-pip 2>/dev/null || \
-      true
-    fi
-  fi
+  if [ "$PLATFORM" = "linux" ]; then
 
-  if has_cmd pip3; then
-    if pip3 install checkov --quiet; then
-      ok "Checkov installed via pip3"
+    # ── Ensure python3-venv is present ──────────────────────────────────────
+    info "Ensuring python3-venv is installed..."
+    if ! python3 -m venv --help &>/dev/null; then
+      apt-get install -y python3-venv python3-full 2>/dev/null || \
+      yum install -y python3-venv 2>/dev/null || true
+    fi
+
+    # ── Method 1: pipx (cleanest, works on any distro) ──────────────────────
+    if has_cmd pipx; then
+      info "Installing Checkov via pipx..."
+      if pipx install checkov --quiet 2>/dev/null; then
+        pipx ensurepath --quiet 2>/dev/null || true
+        ok "Checkov installed via pipx"
+        INSTALLED+=("checkov")
+      else
+        warn "pipx install failed — falling back to venv method"
+      fi
+    fi
+
+    # ── Method 2: dedicated venv (works on Ubuntu 22.04+ / Debian 12+ with PEP 668) ──
+    if ! has_cmd checkov; then
+      info "Installing Checkov into a dedicated venv at ${CHECKOV_VENV}..."
+      if python3 -m venv "$CHECKOV_VENV" \
+          && "$CHECKOV_VENV/bin/pip" install --quiet --upgrade pip \
+          && "$CHECKOV_VENV/bin/pip" install --quiet checkov; then
+        # Create a wrapper symlink so 'checkov' works system-wide
+        ln -sf "$CHECKOV_VENV/bin/checkov" "$CHECKOV_BIN"
+        ok "Checkov installed in venv and symlinked to /usr/local/bin/checkov"
+        INSTALLED+=("checkov")
+      else
+        err "Failed to install Checkov via venv"
+        FAILED+=("checkov")
+      fi
+    fi
+
+  else
+    # macOS
+    info "Installing Checkov via pip3 (macOS)..."
+    if pip3 install checkov --quiet 2>/dev/null \
+        || pip3 install checkov --quiet --break-system-packages 2>/dev/null; then
+      ok "Checkov installed on macOS"
       INSTALLED+=("checkov")
     else
-      err "Failed to install Checkov via pip3"
+      err "Failed to install Checkov on macOS"
       FAILED+=("checkov")
     fi
-  else
-    err "pip3 not available — cannot install Checkov"
-    warn "Install Python 3 and pip3 first: sudo apt-get install python3-pip"
-    FAILED+=("checkov")
   fi
 fi
 
